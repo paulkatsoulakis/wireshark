@@ -1,5 +1,3 @@
-Tabsize: 4
-
 This file is a HOWTO for Wireshark developers interested in writing or working
 on Wireshark protocol dissectors. It describes expected code patterns and the
 use of some of the important functions and variables.
@@ -69,8 +67,7 @@ Usually, you will put your newly created dissector file into the directory
 epan/dissectors/, just like all the other packet-*.c files already in there.
 
 Also, please add your dissector file to the corresponding makefiles,
-described in section "1.8 Editing Makefile.am and CMakeLists.txt
-to add your dissector" below.
+described in section "1.8 Editing CMakeLists.txt to add your dissector" below.
 
 Dissectors that use the dissector registration API to register with a lower
 level protocol (this is the vast majority) don't need to define a prototype in
@@ -360,11 +357,15 @@ sequences.
 gint tvb_get_nstringz(tvbuff_t *tvb, const gint offset, const guint bufsize, guint8* buffer);
 gint tvb_get_nstringz0(tvbuff_t *tvb, const gint offset, const guint bufsize, guint8* buffer);
 
-Returns a null-terminated buffer containing data from the specified tvbuff,
-starting at the specified offset, and containing all characters from the
-tvbuff up to and including a terminating null character in the tvbuff.
-"*lengthp" will be set to the length of the string, including the terminating
-null.
+Copies bufsize bytes, including the terminating NULL, to buffer. If a NULL
+terminator is found before reaching bufsize, only the bytes up to and including
+the NULL are copied. Returns the number of bytes copied (not including
+terminating NULL), or -1 if the string was truncated in the buffer due to
+not having reached the terminating NULL. In this case, the resulting
+buffer is not NULL-terminated.
+tvb_get_nstringz0() works like tvb_get_nstringz(), but never returns -1 since
+the string is guaranteed to have a terminating NULL. If the string was truncated
+when copied into buffer, a NULL is placed at the end of buffer to terminate it.
 
 gchar *tvb_get_ts_23_038_7bits_string(wmem_allocator_t *scope,
     tvbuff_t *tvb, const gint bit_offset, gint no_of_chars);
@@ -652,8 +653,7 @@ generated automatically; to arrange that a protocol's register routine
 be called at startup:
 
     the file containing a dissector's "register" routine must be
-    added to "DISSECTOR_SRC" in "epan/dissectors/Makefile.am"
-    (and in "epan/dissectors/CMakeLists.txt");
+    added to "DISSECTOR_SRC" in "epan/dissectors/CMakeLists.txt";
 
     the "register" routine must have a name of the form
     "proto_register_XXX";
@@ -2299,13 +2299,45 @@ is expected to create a new tvbuff of type TVBUFF_SUBSET which
 contains the payload portion of the protocol (that is, the bytes
 that are relevant to the next dissector).
 
-The syntax for creating a new TVBUFF_SUBSET is:
+To create a new TVBUFF_SUBSET that begins at a specified offset in a
+parent tvbuff, and runs to the end of the parent tvbuff, the routine
+tvbuff_new_subset_remaining() is used:
 
-next_tvb = tvb_new_subset_length_caplen(tvb, offset, length, reported_length)
+    next_tvb = tvb_new_subset_remaining(tvb, offset);
 
-or, in the common case where it should just run to the end of the packet,
+Where:
+    tvb is the tvbuff that the dissector has been working on. It
+    can be a tvbuff of any type.
 
-next_tvb = tvb_new_subset_remaining(tvb, offset)
+    next_tvb is the new TVBUFF_SUBSET.
+
+    offset is the byte offset of 'tvb' at which the new tvbuff
+    should start.  The first byte is the 0th byte.
+
+To create a new TVBUFF_SUBSET that begins at a specified offset in a
+parent tvbuff, with a specified number of bytes in the payload, the
+routine tvbuff_new_subset_length() is used:
+
+    next_tvb = tvb_new_subset_length(tvb, offset, reported_length);
+
+Where:
+    tvb is the tvbuff that the dissector has been working on. It
+    can be a tvbuff of any type.
+
+    next_tvb is the new TVBUFF_SUBSET.
+
+    offset is the byte offset of 'tvb' at which the new tvbuff
+    should start.  The first byte is the 0th byte.
+
+    reported_length is the number of bytes that the current protocol
+    says should be in the payload.
+
+In the few cases where the number of bytes available in the new subset
+must be explicitly specified, rather than being calculated based on the
+number of bytes in the payload, the routine tvb_new_subset_length_caplen()
+is used:
+
+    next_tvb = tvb_new_subset_length_caplen(tvb, offset, length, reported_length);
 
 Where:
     tvb is the tvbuff that the dissector has been working on. It
@@ -2372,23 +2404,11 @@ This allows dissection of a packet to be expanded outside of dissector without
 having to modify the dissector directly.
 
 
-1.8 Editing Makefile.am and CMakeLists.txt to add your dissector.
+1.8 Editing CMakeLists.txt to add your dissector.
 
 To arrange that your dissector will be built as part of Wireshark, you
-must add the name of the source file for your dissector to the
-'DISSECTOR_SRC' macro in the 'Makefile.am' file in the 'epan/dissectors'
-directory.  (Note that this is for modern versions of UNIX, so there
-is no 14-character limitation on file names, and for modern versions of
-Windows, so there is no 8.3-character limitation on file names.)
-
-If your dissector also has its own header file or files, you must add
-them to the 'DISSECTOR_INCLUDES' macro in the 'Makefile.am' file in
-the 'epan/dissectors' directory, so that it's included when release source
-tarballs are built (otherwise, the source in the release tarballs won't
-compile).
-
-In addition to the above, you should add your dissector source file name
-to the DISSECTOR_SRC section of epan/dissectors/CMakeLists.txt
+must add the name of the source file for your dissector to the DISSECTOR_SRC
+section of epan/dissectors/CMakeLists.txt
 
 
 1.9 Using the git source code tree.

@@ -198,7 +198,7 @@
 #include "airpcap_gui_utils.h"
 #endif
 
-#include <epan/crypt/airpdcap_ws.h>
+#include <epan/crypt/dot11decrypt_ws.h>
 
 
 #define INVALID_OPTION 1
@@ -2013,12 +2013,12 @@ main(int argc, char *argv[])
      * Attempt to get the pathname of the directory containing the
      * executable file.
      */
-    init_progfile_dir_error = init_progfile_dir(argv[0], main);
+    init_progfile_dir_error = init_progfile_dir(argv[0]);
 
     /* initialize the funnel mini-api */
     initialize_funnel_ops();
 
-    AirPDcapInitContext(&airpdcap_ctx);
+    Dot11DecryptInitContext(&dot11decrypt_ctx);
 
 #ifdef _WIN32
     /* Load wpcap if possible. Do this before collecting the run-time version information */
@@ -2631,7 +2631,7 @@ main(int argc, char *argv[])
     epan_cleanup();
     extcap_cleanup();
 
-    AirPDcapDestroyContext(&airpdcap_ctx);
+    Dot11DecryptDestroyContext(&dot11decrypt_ctx);
 
 #ifdef _WIN32
     /* hide the (unresponsive) main window, while asking the user to close the console window */

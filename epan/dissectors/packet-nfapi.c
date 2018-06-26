@@ -1,29 +1,17 @@
 /* packet-nfapi.c
-* Routines for Network Function Application Platform Interface (nFAPI) dissection
-* Copyright 2017 Cisco Systems, Inc.
-*
-* Wireshark - Network traffic analyzer
-* By Gerald Combs <gerald@wireshark.org>
-* Copyright 1998 Gerald Combs
-*
-* This program is free software; you can redistribute it and/or
-* modify it under the terms of the GNU General Public License
-* as published by the Free Software Foundation; either version 2
-* of the License, or (at your option) any later version.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License
-* along with this program; if not, write to the Free Software
-* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-*
-* References:
-* SCF082.09.04  http://scf.io/en/documents/082_-_nFAPI_and_FAPI_specifications.php
-*
-*/
+ * Routines for Network Function Application Platform Interface (nFAPI) dissection
+ * Copyright 2017 Cisco Systems, Inc.
+ *
+ * Wireshark - Network traffic analyzer
+ * By Gerald Combs <gerald@wireshark.org>
+ * Copyright 1998 Gerald Combs
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * References:
+ * SCF082.09.04  http://scf.io/en/documents/082_-_nFAPI_and_FAPI_specifications.php
+ *
+ */
 
 #include "config.h"
 
@@ -9123,7 +9111,7 @@ void proto_register_nfapi(void)
 			"The number of cell specific transmit antenna ports within the DRS occasions", HFILL }
 		},
 		{ &hf_nfapi_transmission_power_for_drs,
-			{ "Transmission power for DRS", "nfapi.transmission.power.for.drs.",
+			{ "Transmission power for DRS", "nfapi.transmission.power.for.drs",
 			FT_UINT16, BASE_CUSTOM, CF_FUNC(power_offset_conversion_fn), 0x0,
 			"Offset of cell specific Reference signals power within DRS occasions to the reference signal power", HFILL }
 		},
@@ -10217,7 +10205,7 @@ void proto_register_nfapi(void)
 			"Valid for DCI format 6-2", HFILL }
 		},
 		{ &hf_nfapi_number_of_tx_antenna_ports,
-			{ "Number of TX Antenna ports", "nfapi.num.of.tx.antenna.ports.",
+			{ "Number of TX Antenna ports", "nfapi.num.of.tx.antenna.ports",
 			FT_UINT8, BASE_DEC, NULL, 0x0,
 			"Number of TX physical antenna ports", HFILL }
 		},
@@ -11147,7 +11135,7 @@ void proto_register_nfapi(void)
 			"Indicates HARQ results", HFILL }
 		},
 		{ &hf_nfapi_harq_tb_1,
-			{ "HARQ TB1", "nfapi.harq.tb.",
+			{ "HARQ TB1", "nfapi.harq.tb.1",
 			FT_UINT8, BASE_DEC, VALS(harq_value_vals), 0x0,
 			"HARQ feedback of 1st TB.", HFILL }
 		},

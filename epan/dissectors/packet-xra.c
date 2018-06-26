@@ -6,25 +6,15 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
 #include "config.h"
 
 #include <epan/packet.h>
 #include <wiretap/wtap.h>
+#include <epan/expert.h>
+#include <epan/crc16-tvb.h>
 
 void proto_register_xra(void);
 void proto_reg_handoff_xra(void);
@@ -161,15 +151,17 @@ static gint hf_docsis_segment_sequencenumber = -1;
 static gint hf_docsis_segment_sidclusterid = -1;
 static gint hf_docsis_segment_request = -1;
 static gint hf_docsis_segment_hcs = -1;
+static gint hf_docsis_segment_hcs_status = -1;
 static gint hf_docsis_segment_data = -1;
 
+static expert_field ei_docsis_segment_hcs_bad = EI_INIT;
 
 static int dissect_xra(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* data _U_);
 static int dissect_xra_tlv(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* data _U_, guint16 tlvLength, guint* segmentHeaderPresent);
 static int dissect_plc(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* data _U_);
 static int dissect_ncp(tvbuff_t * tvb, proto_tree * tree, void* data _U_);
 static int dissect_init_ranging(tvbuff_t * tvb, proto_tree * tree, void* data _U_);
-static int dissect_ofdma_segment(tvbuff_t * tvb, proto_tree * tree, void* data _U_);
+static int dissect_ofdma_segment(tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree, void* data _U_);
 
 
 
@@ -271,19 +263,19 @@ static const value_string profile_id[] = {
   {0, "Profile A"},
   {1, "Profile B"},
   {2, "Profile C"},
-  {4, "Profile D"},
-  {5, "Profile E"},
-  {6, "Profile F"},
-  {7, "Profile G"},
-  {8, "Profile H"},
-  {9, "Profile I"},
-  {10, "Profile J"},
-  {11, "Profile K"},
-  {12, "Profile L"},
-  {13, "Profile M"},
-  {14, "Profile N"},
-  {15, "Profile O"},
-  {16, "Profile P"},
+  {3, "Profile D"},
+  {4, "Profile E"},
+  {5, "Profile F"},
+  {6, "Profile G"},
+  {7, "Profile H"},
+  {8, "Profile I"},
+  {9, "Profile J"},
+  {10, "Profile K"},
+  {11, "Profile L"},
+  {12, "Profile M"},
+  {13, "Profile N"},
+  {14, "Profile O"},
+  {15, "Profile P"},
   {0, NULL}
 };
 
@@ -326,6 +318,12 @@ static const true_false_string codeword_tagging = {
   "this codeword is not included in the codeword counts reported by the CM in the OPT-RSP message"
 };
 
+static const value_string local_proto_checksum_vals[] = {
+  { PROTO_CHECKSUM_E_BAD, "Bad"},
+  { PROTO_CHECKSUM_E_GOOD, "Good"},
+  { 0, NULL}
+};
+
 static void
 mer_fourth_db(char *buf, guint32 value)
 {
@@ -363,6 +361,9 @@ dissect_xra(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* data _
   dissect_xra_tlv(xra_tlv_tvb, pinfo, xra_tree, data, tlv_length, &segment_header_present);
 
   guint16 xra_length = 4 + tlv_length;
+  if(tvb_reported_length_remaining(tvb, xra_length) == 0) {
+    return xra_length;
+  }
   /*Dissecting contents*/
   switch(packet_type) {
     case XRA_PACKETTYPE_OFDM_DOCSIS:
@@ -382,7 +383,7 @@ dissect_xra(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* data _
       if(segment_header_present) {
         col_append_str(pinfo->cinfo, COL_INFO, ": Segment");
         segment_tvb = tvb_new_subset_length(tvb, xra_length, tvb_captured_length_remaining(tvb, xra_length));
-        return dissect_ofdma_segment(segment_tvb, tree, data);
+        return dissect_ofdma_segment(segment_tvb, pinfo, tree, data);
       }
       break;
     case XRA_PACKETTYPE_US_DOCSIS_MACFRAME:
@@ -511,6 +512,16 @@ dissect_xra_tlv_burst_info(tvbuff_t * tvb, proto_tree * tree, void* data _U_, gu
       case XRA_BURST_INFO_BURST_ID_REFERENCE:
         proto_tree_add_item (xra_tlv_burst_info_tree, hf_xra_tlv_burst_info_burst_id_reference, tvb, tlv_index, length, ENC_BIG_ENDIAN);
         break;
+      case XRA_US_CHANNEL_ID:
+        proto_tree_add_item (xra_tlv_burst_info_tree, hf_xra_tlv_us_channel_id, tvb, tlv_index, length, ENC_BIG_ENDIAN);
+        break;
+      case XRA_SID:
+        proto_tree_add_item (xra_tlv_burst_info_tree, hf_xra_tlv_sid, tvb, tlv_index, length, ENC_BIG_ENDIAN);
+        break;
+      case XRA_IUC:
+        proto_tree_add_item (xra_tlv_burst_info_tree, hf_xra_tlv_iuc, tvb, tlv_index, length, ENC_BIG_ENDIAN);
+        break;
+
       default:
         proto_tree_add_item (xra_tlv_burst_info_tree, hf_xra_unknown, tvb, tlv_index, length, ENC_NA);
         break;
@@ -793,7 +804,7 @@ dissect_init_ranging(tvbuff_t * tvb, proto_tree * tree, void* data _U_) {
 }
 
 static int
-dissect_ofdma_segment(tvbuff_t * tvb, proto_tree * tree, void* data _U_) {
+dissect_ofdma_segment(tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree, void* data _U_) {
   proto_tree *segment_tree;
   proto_item *segment_item;
 
@@ -807,7 +818,12 @@ dissect_ofdma_segment(tvbuff_t * tvb, proto_tree * tree, void* data _U_) {
   proto_tree_add_item (segment_tree, hf_docsis_segment_sequencenumber, tvb, 2, 2, ENC_BIG_ENDIAN);
   proto_tree_add_item (segment_tree, hf_docsis_segment_sidclusterid, tvb, 3, 1, ENC_BIG_ENDIAN);
   proto_tree_add_item (segment_tree, hf_docsis_segment_request, tvb, 4, 2, ENC_BIG_ENDIAN);
-  proto_tree_add_item (segment_tree, hf_docsis_segment_hcs, tvb, 6, 2, ENC_BIG_ENDIAN);
+
+  /* dissect the header check sequence */
+  /* CRC-CCITT(16+12+5+1) */
+  guint16 fcs = g_ntohs(crc16_ccitt_tvb(tvb, 6));
+  proto_tree_add_checksum(segment_tree, tvb, 6, hf_docsis_segment_hcs, hf_docsis_segment_hcs_status, &ei_docsis_segment_hcs_bad, pinfo, fcs, ENC_BIG_ENDIAN, PROTO_CHECKSUM_VERIFY);
+
   proto_tree_add_item (segment_tree, hf_docsis_segment_data, tvb, 8, tvb_captured_length_remaining(tvb, 8), ENC_NA);
 
   return tvb_captured_length(tvb);
@@ -1153,11 +1169,20 @@ proto_register_xra (void)
         FT_UINT16, BASE_HEX, NULL, 0x0,
         NULL, HFILL}
     },
+    { &hf_docsis_segment_hcs_status,
+     { "Segment HCS Status", "docsis_segment.hcs.status",
+       FT_UINT8, BASE_NONE, VALS(local_proto_checksum_vals), 0x0,
+       NULL, HFILL}
+    },
     {&hf_docsis_segment_data,
       {"Data", "docsis_segment.data",
         FT_BYTES, BASE_NONE, NULL, 0x0,
         NULL, HFILL}
     },
+  };
+
+  static ei_register_info ei[] = {
+      { &ei_docsis_segment_hcs_bad, { "docsis_segment.hcs_bad", PI_CHECKSUM, PI_ERROR, "Bad checksum", EXPFILL }},
   };
 
   /* Setup protocol subtree array */
@@ -1174,6 +1199,7 @@ proto_register_xra (void)
     &ett_init_ranging
   };
 
+  expert_module_t* expert_xra;
 
   /* Register the protocol name and description */
   proto_xra = proto_register_protocol ("Excentis XRA header", "XRA", "xra");
@@ -1182,6 +1208,9 @@ proto_register_xra (void)
   proto_ncp = proto_register_protocol("DOCSIS_NCP", "DOCSIS_NCP", "docsis_ncp");
   proto_init_ranging = proto_register_protocol("DOCSIS_INIT_RANGING", "DOCSIS_INIT_RANGING", "docsis_init_ranging");
 
+  /* register expert notifications */
+  expert_xra = expert_register_protocol(proto_xra);
+  expert_register_field_array(expert_xra, ei, array_length(ei));
 
   /* Required function calls to register the header fields and subtrees used */
   proto_register_field_array (proto_xra, hf, array_length (hf));

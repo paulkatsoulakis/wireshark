@@ -76,7 +76,7 @@
 #include "packet-sflow.h"
 #include "packet-gre.h"
 
-#include <epan/crypt/airpdcap_ws.h>
+#include <epan/crypt/dot11decrypt_ws.h>
 
 void proto_register_ieee80211(void);
 void proto_reg_handoff_ieee80211(void);
@@ -161,22 +161,22 @@ uat_wep_key_record_update_cb(void* r, char** err)
     dk_type = dk->type;
     free_key_string(dk);
     switch (dk_type) {
-      case AIRPDCAP_KEY_TYPE_WEP:
-      case AIRPDCAP_KEY_TYPE_WEP_40:
-      case AIRPDCAP_KEY_TYPE_WEP_104:
-        if (rec->key != AIRPDCAP_KEY_TYPE_WEP) {
+      case DOT11DECRYPT_KEY_TYPE_WEP:
+      case DOT11DECRYPT_KEY_TYPE_WEP_40:
+      case DOT11DECRYPT_KEY_TYPE_WEP_104:
+        if (rec->key != DOT11DECRYPT_KEY_TYPE_WEP) {
           *err = g_strdup("Invalid key format");
           return FALSE;
         }
         break;
-      case AIRPDCAP_KEY_TYPE_WPA_PWD:
-        if (rec->key != AIRPDCAP_KEY_TYPE_WPA_PWD) {
+      case DOT11DECRYPT_KEY_TYPE_WPA_PWD:
+        if (rec->key != DOT11DECRYPT_KEY_TYPE_WPA_PWD) {
           *err = g_strdup("Invalid key format");
           return FALSE;
         }
         break;
-      case AIRPDCAP_KEY_TYPE_WPA_PSK:
-        if (rec->key != AIRPDCAP_KEY_TYPE_WPA_PSK) {
+      case DOT11DECRYPT_KEY_TYPE_WPA_PSK:
+        if (rec->key != DOT11DECRYPT_KEY_TYPE_WPA_PSK) {
           *err = g_strdup("Invalid key format");
           return FALSE;
         }
@@ -211,7 +211,7 @@ ieee_80211_add_tagged_parameters(tvbuff_t *tvb, int offset, packet_info *pinfo,
                                   proto_tree *tree, int tagged_parameters_len, int ftype,
                                   association_sanity_check_t *association_sanity_check);
 
-static tvbuff_t *try_decrypt(tvbuff_t *tvb, packet_info *pinfo, guint32 offset, guint32 len, guint8 *algorithm, guint32 *sec_header, guint32 *sec_trailer, PAIRPDCAP_KEY_ITEM used_key);
+static tvbuff_t *try_decrypt(tvbuff_t *tvb, packet_info *pinfo, guint32 offset, guint32 len, guint8 *algorithm, guint32 *sec_header, guint32 *sec_trailer, PDOT11DECRYPT_KEY_ITEM used_key);
 
 static int weak_iv(guchar *iv);
 
@@ -491,7 +491,7 @@ typedef struct mimo_control
 #define TAG_MCCAOP_ADVERTISEMENT_OV  174
 #define TAG_QUIET_PERIOD_REQ         175  /* IEEE Std 802.11ad */
 #define TAG_QUIET_PERIOD_RES         177  /* IEEE Std 802.11ad */
-#define TAG_ECPAC_POLICY             182  /* IEEE Std 802.11ad */
+#define TAG_ECAPC_POLICY             182  /* IEEE Std 802.11ad */
 #define TAG_CLUSTER_TIME_OFFSET      183  /* IEEE Std 802.11ad */
 #define TAG_ANTENNA_SECTOR_ID        190  /* IEEE Std 802.11ad */
 #define TAG_VHT_CAPABILITY           191  /* IEEE Std 802.11ac/D3.1 */
@@ -659,7 +659,7 @@ static const value_string tag_num_vals[] = {
   { TAG_MCCAOP_ADVERTISEMENT_OV,              "MCCAOP Advertisement Overview" },
   { TAG_QUIET_PERIOD_REQ,                     "Quiet Period Request" },
   { TAG_QUIET_PERIOD_RES,                     "Quiet Period Response" },
-  { TAG_ECPAC_POLICY,                         "ECPAC Policy" },
+  { TAG_ECAPC_POLICY,                         "ECAPC Policy" },
   { TAG_CLUSTER_TIME_OFFSET,                  "Cluster Time Offset" },
   { TAG_ANTENNA_SECTOR_ID,                    "Antenna Sector ID" },
   { TAG_VHT_CAPABILITY,                       "VHT Capabilities" },
@@ -730,9 +730,12 @@ static const value_string tag_num_vals_eid_ext[] = {
 static value_string_ext tag_num_vals_eid_ext_ext = VALUE_STRING_EXT_INIT(tag_num_vals_eid_ext);
 
 static const value_string wfa_subtype_vals[] = {
+  { WFA_SUBTYPE_SUBSCRIPTION_REMEDIATION, "Subscription Remediation" },
+  { WFA_SUBTYPE_DEAUTHENTICATION_IMMINENT, "Deauthentication Imminent" },
   { WFA_SUBTYPE_P2P, "P2P" },
   { WFA_SUBTYPE_HS20_INDICATION, "Hotspot 2.0 Indication" },
   { WFA_SUBTYPE_HS20_ANQP, "Hotspot 2.0 ANQP" },
+  { WFA_SUBTYPE_OSEN, "OSU Server-only l2 Encryption Network" },
   { WFA_SUBTYPE_DPP, "Device Provisioning Protocol" },
   { WFA_SUBTYPE_IEEE1905_MULTI_AP, "IEEE1905 Multi-AP" },
   { 0, NULL }
@@ -2625,7 +2628,7 @@ static const value_string ht_info_secondary_channel_offset_flags[] = {
   {0x00, NULL}
 };
 
-static const true_false_string ht_info_channel_width_flag = {
+static const true_false_string ht_info_channel_sta_width_flag = {
   "Channel of any width supported",
   "20 MHz channel width only"
 };
@@ -2635,39 +2638,17 @@ static const true_false_string ht_info_rifs_mode_flag = {
   "Prohibited"
 };
 
-static const true_false_string ht_info_psmp_stas_only_flag = {
-  "Association requests are accepted from only PSMP capable STA",
-  "Association requests are accepted regardless of PSMP capability"
-};
-
-static const value_string ht_info_service_interval_granularity_flags[] = {
-  {0x00, "5 ms"},
-  {0x01, "10 ms"},
-  {0x02, "15 ms"},
-  {0x03, "20 ms"},
-  {0x04, "25 ms"},
-  {0x05, "30 ms"},
-  {0x06, "35 ms"},
-  {0x07, "40 ms"},
-  {0x00, NULL}
-};
-
-static const value_string ht_info_operating_mode_flags[] = {
-  {0x00, "All STAs are - 20/40 MHz HT or in a 20/40 MHz BSS or are 20 MHz HT in a 20 MHz BSS"},
+static const value_string ht_info_operating_protection_mode_flags[] = {
+  {0x00, "No protection mode"},
   {0x01, "HT non-member protection mode"},
-  {0x02, "Only HT STAs in the BSS, however, there exists at least one 20 MHz STA"},
-  {0x03, "HT mixed mode"},
+  {0x02, "20 MHz protection mode"},
+  {0x03, "non-HT mixed mode"},
   {0x00, NULL}
 };
 
 static const true_false_string ht_info_non_greenfield_sta_present_flag = {
   "One or more associated STAs are not greenfield capable",
   "All associated STAs are greenfield capable"
-};
-
-static const true_false_string ht_info_transmit_burst_limit_flag = {
-  "2.4 GHz - 6.16 ms | All other bands - 3.08 ms",
-  "No limit"
 };
 
 static const true_false_string ht_info_obss_non_ht_stas_present_flag = {
@@ -2680,13 +2661,8 @@ static const true_false_string ht_info_dual_beacon_flag = {
   "No second beacon is transmitted"
 };
 
-static const true_false_string ht_info_dual_cts_protection_flag = {
-  "Required",
-  "Not required"
-};
-
 static const true_false_string ht_info_secondary_beacon_flag = {
-  "Secondary beacon",
+  "STBC beacon",
   "Primary beacon"
 };
 
@@ -2804,9 +2780,9 @@ static const value_string service_interval_granularity_vals[] = {
 };
 
 static const value_string wep_type_vals[] = {
-  { AIRPDCAP_KEY_TYPE_WEP, STRING_KEY_TYPE_WEP },
-  { AIRPDCAP_KEY_TYPE_WPA_PWD, STRING_KEY_TYPE_WPA_PWD },
-  { AIRPDCAP_KEY_TYPE_WPA_PSK, STRING_KEY_TYPE_WPA_PSK },
+  { DOT11DECRYPT_KEY_TYPE_WEP, STRING_KEY_TYPE_WEP },
+  { DOT11DECRYPT_KEY_TYPE_WPA_PWD, STRING_KEY_TYPE_WPA_PWD },
+  { DOT11DECRYPT_KEY_TYPE_WPA_PSK, STRING_KEY_TYPE_WPA_PSK },
   { 0x00, NULL }
 };
 
@@ -2839,9 +2815,46 @@ static const value_string band_id[] = {
   {0,   NULL}
 };
 
+static const value_string extended_sc_mcs[] = {
+  {0x0, "None"},
+  {0x1, "MCS 9.1"},
+  {0x2, "MCS 12.1"},
+  {0x3, "MCS 12.2"},
+  {0x4, "MCS 12.3"},
+  {0x5, "MCS 12.4"},
+  {0x6, "MCS 12.5"},
+  {0x7, "MCS 12.6"},
+  {0, NULL}
+};
+
+static const range_string max_basic_sf_amsdu[] = {
+  {0, 0, "No Limit"},
+  {1, 1, "4 Basic subframes"},
+  {2, 2, "8 Basic subframes"},
+  {3, 3, "16 Basic subframes"},
+  {4, 4, "32 Basic subframes"},
+  {5, 5, "64 Basic subframes"},
+  {6, 6, "128 Basic subframes"},
+  {7, 7, "256 Basic subframes"},
+  {8, 255, "reserved"},
+  {0, 0, NULL}
+};
+
+static const range_string max_short_sf_amsdu[] = {
+  {0, 0, "No Limit"},
+  {1, 1, "32 Short subframes"},
+  {2, 2, "64 Short subframes"},
+  {3, 3, "128 Short subframes"},
+  {4, 4, "256 Short subframes"},
+  {5, 5, "512 Short subframes"},
+  {6, 6, "1024 Short subframes"},
+  {7, 255, "reserved"},
+  {0, 0, NULL}
+};
+
 static const value_string allocation_type[] = {
   {0x0, "SP Allocation"},
-  {0x4, "CBAP allocation"},
+  {0x1, "CBAP allocation"},
   {0,   NULL}
 };
 
@@ -3025,10 +3038,12 @@ static int hf_ieee80211_he_umrs_ru_allocation = -1;
 static int hf_ieee80211_he_dl_tx_power = -1;
 static int hf_ieee80211_he_ul_target_rssi = -1;
 static int hf_ieee80211_he_ul_mcs = -1;
+static int hf_ieee80211_he_ul_reserved = -1;
 static int hf_ieee80211_he_om_rx_nss = -1;
 static int hf_ieee80211_he_om_channel_width = -1;
 static int hf_ieee80211_he_om_ul_mu_disable = -1;
 static int hf_ieee80211_he_om_tx_nsts = -1;
+static int hf_ieee80211_he_om_reserved = -1;
 static int hf_ieee80211_he_hla_unsolicited_mfb = -1;
 static int hf_ieee80211_he_hla_mrq = -1;
 static int hf_ieee80211_he_hla_nss = -1;
@@ -3038,6 +3053,7 @@ static int hf_ieee80211_he_hla_ru = -1;
 static int hf_ieee80211_he_hla_bw = -1;
 static int hf_ieee80211_he_hla_msi_ppdu_type = -1;
 static int hf_ieee80211_he_hla_tx_bf = -1;
+static int hf_ieee80211_he_hla_reserved = -1;
 static int hf_ieee80211_he_bsr_aci_bitmap = -1;
 static int hf_ieee80211_he_bsr_delta_tid = -1;
 static int hf_ieee80211_he_bsr_aci_high = -1;
@@ -3046,9 +3062,11 @@ static int hf_ieee80211_he_bsr_queue_size_high = -1;
 static int hf_ieee80211_he_bsr_queue_size_all = -1;
 static int hf_ieee80211_he_uph_ul_power_headroom = -1;
 static int hf_ieee80211_he_uph_ul_min_transmit_power_flag = -1;
+static int hf_ieee80211_he_uph_reserved = -1;
 static int hf_ieee80211_he_cci_ac_constraint = -1;
 static int hf_ieee80211_he_cci_rdg_more_ppdu = -1;
 static int hf_ieee80211_he_cci_sr_ppdu_indic = -1;
+static int hf_ieee80211_he_cci_reserved = -1;
 static int hf_ieee80211_he_btc_avail_chan = -1;
 static int hf_ieee80211_he_btc_reserved = -1;
 static int hf_ieee80211_he_trigger_common_info = -1;
@@ -3245,12 +3263,10 @@ static int hf_ieee80211_3gpp_gc_gud = -1;
 static int hf_ieee80211_3gpp_gc_udhl = -1;
 static int hf_ieee80211_3gpp_gc_iei = -1;
 static int hf_ieee80211_3gpp_gc_num_plmns = -1;
+static int hf_ieee80211_3gpp_gc_plmn = -1;
 static int hf_ieee80211_3gpp_gc_plmn_len = -1;
 static int hf_ieee80211_ff_anqp_domain_name_len = -1;
 static int hf_ieee80211_ff_anqp_domain_name = -1;
-static int hf_ieee80211_ff_anqp_venue_url_len = -1;
-static int hf_ieee80211_ff_anqp_venue_url_number = -1;
-static int hf_ieee80211_ff_anqp_venue_url = -1;
 static int hf_ieee80211_ff_tdls_action_code = -1;
 static int hf_ieee80211_ff_target_channel = -1;
 static int hf_ieee80211_ff_operating_class = -1;
@@ -3609,7 +3625,6 @@ static int hf_ieee80211_tagged_parameters = -1;  /* Tagged payload item */
 static int hf_ieee80211_tag = -1;
 static int hf_ieee80211_tag_number = -1;
 static int hf_ieee80211_tag_length = -1;
-static int hf_ieee80211_tag_interpretation = -1;
 static int hf_ieee80211_tag_data = -1;
 static int hf_ieee80211_tag_oui = -1;
 static int hf_ieee80211_tag_oui_wfa_subtype = -1;
@@ -3668,6 +3683,12 @@ static int hf_ieee80211_block_ack_control_ack_policy = -1;
 static int hf_ieee80211_block_ack_control_type = -1;
 static int hf_ieee80211_block_ack_control_reserved = -1;
 static int hf_ieee80211_block_ack_control_tid_info = -1;
+static int hf_ieee80211_block_ack_multi_sta_aid11 = -1;
+static int hf_ieee80211_block_ack_multi_sta_ack_type = -1;
+static int hf_ieee80211_block_ack_multi_sta_tid = -1;
+static int hf_ieee80211_block_ack_multi_sta_aid_tid = -1;
+static int hf_ieee80211_block_ack_multi_sta_reserved = -1;
+static int hf_ieee80211_block_ack_multi_sta_ra = -1;
 
 static int hf_ieee80211_block_ack_multi_tid_reserved = -1;
 static int hf_ieee80211_block_ack_multi_tid_value = -1;
@@ -3795,27 +3816,27 @@ static int hf_ieee80211_ht_info_primary_channel = -1;
 
 static int hf_ieee80211_ht_info_delimiter1 = -1;
 static int hf_ieee80211_ht_info_secondary_channel_offset = -1;
-static int hf_ieee80211_ht_info_channel_width = -1;
+static int hf_ieee80211_ht_info_sta_channel_width = -1;
 static int hf_ieee80211_ht_info_rifs_mode = -1;
-static int hf_ieee80211_ht_info_psmp_stas_only = -1;
-static int hf_ieee80211_ht_info_service_interval_granularity = -1;
+static int hf_ieee80211_ht_info_reserved_b4_b7 = -1;
 
 static int hf_ieee80211_ht_info_delimiter2 = -1;
-static int hf_ieee80211_ht_info_operating_mode = -1;
+static int hf_ieee80211_ht_info_protection = -1;
 static int hf_ieee80211_ht_info_non_greenfield_sta_present = -1;
-static int hf_ieee80211_ht_info_transmit_burst_limit = -1;
+static int hf_ieee80211_ht_info_reserved_b11 = -1;
 static int hf_ieee80211_ht_info_obss_non_ht_stas_present = -1;
-static int hf_ieee80211_ht_info_reserved_1 = -1;
+static int hf_ieee80211_ht_info_channel_center_freq_seg_2 = -1;
+static int hf_ieee80211_ht_info_reserved_b21_b23 = -1;
 
 static int hf_ieee80211_ht_info_delimiter3 = -1;
-static int hf_ieee80211_ht_info_reserved_2 = -1;
+static int hf_ieee80211_ht_info_reserved_b24_b29 = -1;
 static int hf_ieee80211_ht_info_dual_beacon = -1;
 static int hf_ieee80211_ht_info_dual_cts_protection = -1;
 static int hf_ieee80211_ht_info_secondary_beacon = -1;
 static int hf_ieee80211_ht_info_lsig_txop_protection_full_support = -1;
 static int hf_ieee80211_ht_info_pco_active = -1;
 static int hf_ieee80211_ht_info_pco_phase = -1;
-static int hf_ieee80211_ht_info_reserved_3 = -1;
+static int hf_ieee80211_ht_info_reserved_b36_b39 = -1;
 /*** End: 802.11n D1.10 - HT Information IE  ***/
 
 static int hf_ieee80211_tag_ap_channel_report_operating_class = -1;
@@ -4138,6 +4159,10 @@ static int hf_ieee80211_vht_mcsset_rx_max_mcs_for_6_ss = -1;
 static int hf_ieee80211_vht_mcsset_rx_max_mcs_for_7_ss = -1;
 static int hf_ieee80211_vht_mcsset_rx_max_mcs_for_8_ss = -1;
 
+static int hf_ieee80211_vht_mcsset_max_nsts_total = -1;
+static int hf_ieee80211_vht_mcsset_ext_nss_bw_cap = -1;
+static int hf_ieee80211_vht_mcsset_reserved = -1;
+
 static int hf_ieee80211_vht_mcsset_rx_highest_long_gi = -1;
 
 static int hf_ieee80211_vht_mcsset_tx_mcs_map = -1;
@@ -4181,7 +4206,6 @@ static int hf_ieee80211_vht_ndp_annc_token = -1;
 static int hf_ieee80211_vht_ndp_annc_token_number = -1;
 static int hf_ieee80211_vht_ndp_annc_he_subfield = -1;
 static int hf_ieee80211_vht_ndp_annc_token_reserved = -1;
-static int hf_ieee80211_vht_ndp_annc_sta_info = -1;
 static int hf_ieee80211_vht_ndp_annc_sta_info_aid12 = -1;
 static int hf_ieee80211_vht_ndp_annc_sta_info_feedback_type = -1;
 static int hf_ieee80211_vht_ndp_annc_sta_info_nc_index = -1;
@@ -4325,6 +4349,33 @@ static int hf_ieee80211_tag_obss_satpc = -1;
 static int hf_ieee80211_tag_obss_wctdf = -1;
 static int hf_ieee80211_tag_obss_sat = -1;
 
+/* IEEE Std 802.11-2012: 8.4.2.25.1 */
+static int hf_group_data_cipher_suite_oui = -1;
+static int hf_group_data_cipher_suite_type = -1;
+static int hf_osen_pairwise_cipher_suite_oui = -1;
+static int hf_osen_pairwise_cipher_suite_type = -1;
+static int hf_osen_pcs_count = -1;
+static int hf_osen_akm_count = -1;
+static int hf_osen_akm_cipher_suite_oui = -1;
+static int hf_osen_akm_cipher_suite_type = -1;
+static int hf_osen_rsn_cap_preauth = -1;
+static int hf_osen_rsn_cap_no_pairwise = -1;
+static int hf_osen_rsn_cap_ptksa_replay_counter = -1;
+static int hf_osen_rsn_cap_gtksa_replay_counter = -1;
+static int hf_osen_rsn_cap_mfpr = -1;
+static int hf_osen_rsn_cap_mfpc = -1;
+static int hf_osen_rsn_cap_jmr = -1;
+static int hf_osen_rsn_cap_peerkey = -1;
+static int hf_osen_rsn_spp_a_msdu_capable = -1;
+static int hf_osen_rsn_spp_a_msdu_required = -1;
+static int hf_osen_rsn_pbac = -1;
+static int hf_osen_extended_key_id_iaf = -1;
+static int hf_osen_reserved = -1;
+static int hf_osen_rsn_cap_flags = -1;
+static int hf_osen_pmkid_count = -1;
+static int hf_osen_pmkid = -1;
+static int hf_osen_group_management_cipher_suite_oui = -1;
+static int hf_osen_group_management_cipher_suite_type = -1;
 
 /*WAPI-Specification 7.3.2.25 : WAPI Parameter Set*/
 static int hf_ieee80211_tag_wapi_param_set_version = -1;
@@ -4383,6 +4434,9 @@ static int hf_ieee80211_tag_tfs_response_id = -1;
 static int hf_ieee80211_tag_wnm_sleep_mode_action_type = -1;
 static int hf_ieee80211_tag_wnm_sleep_mode_response_status = -1;
 static int hf_ieee80211_tag_wnm_sleep_mode_interval = -1;
+
+static int hf_ieee80211_wnm_sub_elt_id = -1;
+static int hf_ieee80211_wnm_sub_elt_len = -1;
 
 /* IEEE Std 802.11v-2011 7.3.2.87 */
 static int hf_ieee80211_tag_time_zone = -1;
@@ -4584,6 +4638,11 @@ static int hf_ieee80211_vs_extreme_unknown = -1;
 static int hf_ieee80211_vs_extreme_ap_length = -1;
 static int hf_ieee80211_vs_extreme_ap_name = -1;
 
+static int hf_ieee80211_vs_aerohive_unknown = -1;
+static int hf_ieee80211_vs_aerohive_hostname_length = -1;
+static int hf_ieee80211_vs_aerohive_hostname = -1;
+static int hf_ieee80211_vs_aerohive_data = -1;
+
 static int hf_ieee80211_rsn_ie_pmkid = -1;
 static int hf_ieee80211_rsn_ie_unknown = -1;
 
@@ -4757,7 +4816,10 @@ static int hf_ieee80211_dpp_subtype = -1;
 static int hf_hs20_indication_dgaf_disabled = -1;
 static int hf_hs20_indication_pps_mo_id_present = -1;
 static int hf_hs20_indication_anqp_domain_id_present = -1;
+static int hf_hs20_reserved = -1;
 static int hf_hs20_indication_release_number = -1;
+static int hf_hs20_indication_pps_mo_id = -1;
+static int hf_hs20_indication_anqp_domain_id = -1;
 
 static int hf_hs20_anqp_subtype = -1;
 static int hf_hs20_anqp_reserved = -1;
@@ -4784,6 +4846,58 @@ static int hf_hs20_anqp_nai_hrq_encoding_type = -1;
 static int hf_hs20_anqp_nai_hrq_length = -1;
 static int hf_hs20_anqp_nai_hrq_realm_name = -1;
 static int hf_hs20_anqp_oper_class_indic = -1;
+static int hf_hs20_osu_friendly_names_len = -1;
+static int hf_hs20_osu_friendly_name_length = -1;
+static int hf_hs20_osu_friendly_name_language = -1;
+static int hf_hs20_osu_friendly_name_name = -1;
+static int hf_hs20_osu_server_uri_len = -1;
+static int hf_hs20_osu_server_uri = -1;
+static int hf_hs20_osu_method_list_len = -1;
+static int hf_hs20_osu_method_val = -1;
+static int hf_hs20_icons_avail_len = -1;
+static int hf_hs20_osu_providers_list_ssid_len = -1;
+static int hf_hs20_osu_providers_ssid = -1;
+static int hf_hs20_osu_providers_count = -1;
+static int hf_hs20_osu_prov_length = -1;
+static int hf_hs20_icon_request_filename = -1;
+static int hf_hs20_icon_binary_file_status = -1;
+static int hf_hs20_icon_type_length = -1;
+static int hf_hs20_icon_type = -1;
+static int hf_hs20_icon_binary_data_len = -1;
+static int hf_hs20_icon_binary_data = -1;
+static int hf_osu_icon_avail_width = -1;
+static int hf_osu_icon_avail_height = -1;
+static int hf_osu_icon_avail_lang_code = -1;
+static int hf_osu_icon_avail_icon_type_len = -1;
+static int hf_osu_icon_avail_icon_type = -1;
+static int hf_osu_icon_avail_filename_len = -1;
+static int hf_osu_icon_avail_filename = -1;
+static int hf_hs20_osu_nai_len = -1;
+static int hf_hs20_osu_nai = -1;
+static int hf_hs20_osu_service_desc_len = -1;
+static int hf_hs20_osu_service_desc_duple_len = -1;
+static int hf_hs20_osu_service_desc_lang = -1;
+static int hf_hs20_osu_service_desc = -1;
+static int hf_hs20_anqp_venue_url_length = -1;
+static int hf_hs20_anqp_venue_number = -1;
+static int hf_hs20_anqp_venue_url = -1;
+static int hf_hs20_anqp_advice_of_charge_length = -1;
+static int hf_hs20_anqp_advice_of_charge_type = -1;
+static int hf_hs20_anqp_aoc_nai_realm_encoding = -1;
+static int hf_hs20_anqp_aoc_nai_realm_len = -1;
+static int hf_hs20_anqp_aoc_nai_realm = -1;
+static int hf_hs20_anqp_aoc_plan_len = -1;
+static int hf_hs20_anqp_aoc_plan_lang = -1;
+static int hf_hs20_anqp_aoc_plan_curcy = -1;
+static int hf_hs20_anqp_aoc_plan_information = -1;
+
+static int hf_hs20_subscription_remediation_url_len = -1;
+static int hf_hs20_subscription_remediation_server_url = -1;
+static int hf_hs20_subscription_remediation_server_method = -1;
+static int hf_hs20_deauth_reason_code = -1;
+static int hf_hs20_reauth_delay = -1;
+static int hf_hs20_deauth_reason_url_len = -1;
+static int hf_hs20_deauth_imminent_reason_url = -1;
 
 /* IEEE Std 802.11ad */
 static int hf_ieee80211_block_ack_RBUFCAP = -1;
@@ -4962,6 +5076,13 @@ static int hf_ieee80211_tag_pcp_power_src = -1;
 static int hf_ieee80211_tag_pcp_decenter = -1;
 static int hf_ieee80211_tag_pcp_forwarding = -1;
 static int hf_ieee80211_tag_pcp_center = -1;
+static int hf_ieee80211_tag_sta_beam_track = -1;
+static int hf_ieee80211_tag_ext_sc_mcs_max_tx = -1;
+static int hf_ieee80211_tag_ext_sc_mcs_tx_code_7_8 = -1;
+static int hf_ieee80211_tag_ext_sc_mcs_max_rx = -1;
+static int hf_ieee80211_tag_ext_sc_mcs_rx_code_7_8 = -1;
+static int hf_ieee80211_tag_max_basic_sf_amsdu = -1;
+static int hf_ieee80211_tag_max_short_sf_amsdu = -1;
 static int hf_ieee80211_tag_PSRSI = -1;
 static int hf_ieee80211_tag_min_BHI_duration = -1;
 static int hf_ieee80211_tag_brdct_sta_info_dur = -1;
@@ -5152,14 +5273,54 @@ static int hf_he_160_80_plus_80_mhz_5ghz = -1;
 static int hf_he_242_tone_rus_in_2_4ghz = -1;
 static int hf_he_242_tone_rus_in_5ghz = -1;
 static int hf_he_chan_width_reserved = -1;
-static int hf_he_mcs_max_he_mcs_1_ss = -1;
-static int hf_he_mcs_max_he_mcs_2_ss = -1;
-static int hf_he_mcs_max_he_mcs_3_ss = -1;
-static int hf_he_mcs_max_he_mcs_4_ss = -1;
-static int hf_he_mcs_max_he_mcs_5_ss = -1;
-static int hf_he_mcs_max_he_mcs_6_ss = -1;
-static int hf_he_mcs_max_he_mcs_7_ss = -1;
-static int hf_he_mcs_max_he_mcs_8_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_rx_1_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_rx_2_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_rx_3_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_rx_4_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_rx_5_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_rx_6_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_rx_7_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_rx_8_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_tx_1_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_tx_2_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_tx_3_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_tx_4_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_tx_5_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_tx_6_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_tx_7_ss = -1;
+static int hf_he_mcs_max_he_mcs_80_tx_8_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_rx_1_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_rx_2_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_rx_3_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_rx_4_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_rx_5_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_rx_6_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_rx_7_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_rx_8_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_tx_1_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_tx_2_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_tx_3_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_tx_4_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_tx_5_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_tx_6_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_tx_7_ss = -1;
+static int hf_he_mcs_max_he_mcs_80p80_tx_8_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_rx_1_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_rx_2_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_rx_3_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_rx_4_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_rx_5_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_rx_6_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_rx_7_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_rx_8_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_tx_1_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_tx_2_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_tx_3_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_tx_4_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_tx_5_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_tx_6_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_tx_7_ss = -1;
+static int hf_he_mcs_max_he_mcs_160_tx_8_ss = -1;
 static int hf_he_rx_he_mcs_map_lte_80 = -1;
 static int hf_he_tx_he_mcs_map_lte_80 = -1;
 static int hf_he_rx_he_mcs_map_160 = -1;
@@ -5292,6 +5453,8 @@ static gint ett_block_ack = -1;
 static gint ett_block_ack_tid = -1;
 static gint ett_block_ack_request_control = -1;
 static gint ett_block_ack_bitmap = -1;
+static gint ett_block_ack_request_multi_sta_aid_tid = -1;
+static gint ett_multi_sta_block_ack = -1;
 static gint ett_ath_cap_tree = -1;
 
 static gint ett_80211_mgt = -1;
@@ -5343,6 +5506,13 @@ static gint ett_htc_tree = -1;
 static gint ett_htc_he_a_control = -1;
 static gint ett_mfb_subtree = -1;
 static gint ett_lac_subtree = -1;
+static gint ett_ieee80211_umrs_control = -1;
+static gint ett_ieee80211_om_control = -1;
+static gint ett_ieee80211_hla_control = -1;
+static gint ett_ieee80211_buffer_status_report = -1;
+static gint ett_ieee80211_control_uph = -1;
+static gint ett_ieee80211_bqr_control = -1;
+static gint ett_ieee80211_control_cci = -1;
 
 static gint ett_vht_cap_tree = -1;
 static gint ett_vht_mcsset_tree = -1;
@@ -5354,6 +5524,7 @@ static gint ett_vht_tpe_info_tree = -1;
 
 static gint ett_vht_ndp_annc = -1;
 static gint ett_vht_ndp_annc_sta_info_tree = -1;
+static gint ett_vht_ndp_annc_sta_list = -1;
 
 static gint ett_he_mimo_control = -1;
 
@@ -5441,6 +5612,21 @@ static gint ett_sched_tree = -1;
 
 static gint ett_fcs = -1;
 
+static gint ett_hs20_osu_providers_list = -1;
+static gint ett_hs20_osu_provider_tree = -1;
+static gint ett_hs20_friendly_names_list = -1;
+static gint ett_hs20_friendly_name_tree = -1;
+static gint ett_hs20_osu_provider_method_list = -1;
+static gint ett_osu_icons_avail_list = -1;
+static gint ett_hs20_osu_icon_tree = -1;
+static gint ett_hs20_osu_service_desc_list = -1;
+static gint ett_hs20_osu_service_desc_tree = -1;
+static gint ett_hs20_venue_url = -1;
+static gint ett_hs20_advice_of_charge = -1;
+static gint ett_hs20_aoc_plan = -1;
+
+static gint ett_hs20_ofn_tree = -1;
+
 static gint ett_adv_proto = -1;
 static gint ett_adv_proto_tuple = -1;
 static gint ett_gas_query = -1;
@@ -5449,6 +5635,16 @@ static gint ett_nai_realm = -1;
 static gint ett_nai_realm_eap = -1;
 static gint ett_tag_ric_data_desc_ie = -1;
 static gint ett_anqp_vendor_capab = -1;
+
+static gint ett_osen_group_data_cipher_suite = -1;
+static gint ett_osen_pairwise_cipher_suites = -1;
+static gint ett_osen_pairwise_cipher_suite = -1;
+static gint ett_osen_akm_cipher_suites = -1;
+static gint ett_osen_akm_cipher_suite = -1;
+static gint ett_osen_rsn_cap_tree = -1;
+static gint ett_osen_pmkid_list = -1;
+static gint ett_osen_pmkid_tree = -1;
+static gint ett_osen_group_management_cipher_suite = -1;
 
 static gint ett_hs20_cc_proto_port_tuple = -1;
 
@@ -5462,6 +5658,10 @@ static gint ett_meru = -1;
 
 static gint ett_qos_map_set_exception = -1;
 static gint ett_qos_map_set_range = -1;
+
+static gint ett_wnm_notif_subelt = -1;
+
+static gint ett_ieee80211_3gpp_plmn = -1;
 
 static expert_field ei_ieee80211_bad_length = EI_INIT;
 static expert_field ei_ieee80211_inv_val = EI_INIT;
@@ -5596,6 +5796,8 @@ is_broadcast_bssid(const address *bssid) {
   return addresses_equal(&bssid_broadcast, bssid);
 }
 
+static heur_dissector_list_t heur_subdissector_list;
+
 static dissector_handle_t ieee80211_handle;
 static dissector_handle_t wlan_withoutfcs_handle;
 static dissector_handle_t llc_handle;
@@ -5680,7 +5882,7 @@ static const val64_string number_of_taps_values[] = {
   {0, NULL}
 };
 
-AIRPDCAP_CONTEXT airpdcap_ctx;
+DOT11DECRYPT_CONTEXT dot11decrypt_ctx;
 
 #define PSMP_STA_INFO_BROADCAST 0
 #define PSMP_STA_INFO_MULTICAST 1
@@ -5839,6 +6041,22 @@ has_mesh_control(guint16 fcf, guint16 qos_ctl, guint8 mesh_flags)
           (QOS_MESH_CONTROL_PRESENT(qos_ctl)) &&
           ((mesh_flags & ~MESH_FLAGS_ADDRESS_EXTENSION) == 0) &&
           ((mesh_flags & MESH_FLAGS_ADDRESS_EXTENSION) != MESH_FLAGS_ADDRESS_EXTENSION));
+}
+
+/****************************************************************************** */
+/*
+ * locally originated mesh frames will have a mesh control field, but no QoS header
+ * detect the presence of mesh control field by checking if mesh flags are legal
+ * and confirming that the next header is an 802.2 LLC header
+ *
+ ****************************************************************************** */
+static int
+has_mesh_control_local(guint16 fcf, guint8 mesh_flags, guint16 next_header)
+{
+  return (((FCF_ADDR_SELECTOR(fcf) == DATA_ADDR_T4) || (FCF_ADDR_SELECTOR(fcf) == DATA_ADDR_T2)) &&
+          ((mesh_flags & ~MESH_FLAGS_ADDRESS_EXTENSION) == 0) &&
+          ((mesh_flags & MESH_FLAGS_ADDRESS_EXTENSION) != MESH_FLAGS_ADDRESS_EXTENSION)) &&
+          next_header == 0xaaaa;
 }
 
 static int
@@ -6050,7 +6268,7 @@ add_mimo_compressed_beamforming_feedback_report(proto_tree *tree, tvbuff_t *tvb,
     gint8 snr;
     char edge_sign;
 
-    snr = (gint8) tvb_get_guint8(tvb, offset);
+    snr = tvb_get_gint8(tvb, offset);
 
     switch(snr) {
       case -128:
@@ -6379,12 +6597,18 @@ dissect_vendor_action_wifi_alliance(tvbuff_t *tvb, packet_info *pinfo, proto_tre
   return offset;
 }
 
+/*
+ * This function is called from two different places. In one case it is called
+ * without the tag and length. In other cases, it is called with those and
+ * is asked to return the type and subtype. We know the difference because
+ * type and subtype will be NULL in the first case.
+ */
 static guint
 dissect_advertisement_protocol_common(packet_info *pinfo, proto_tree *tree,
                                tvbuff_t *tvb, int offset, guint *type,
                                guint *subtype)
 {
-  guint8      tag_no, tag_len, left;
+  guint8      tag_no = 0, tag_len, left;
   proto_item *item = NULL, *adv_item;
   proto_tree *adv_tree, *adv_tuple_tree;
 
@@ -6396,8 +6620,16 @@ dissect_advertisement_protocol_common(packet_info *pinfo, proto_tree *tree,
   if (type)
     item = proto_tree_add_item(tree, hf_ieee80211_tag_number, tvb, offset, 1, ENC_LITTLE_ENDIAN);
 
-  tag_len = tvb_get_guint8(tvb, offset + 1);
-  if (tag_no != TAG_ADVERTISEMENT_PROTOCOL) {
+  /*
+   * If we have the tag and len, use the len in the tvb, otherwise ask
+   * for the length of the tvb.
+   */
+  if (type)
+    tag_len = tvb_get_guint8(tvb, offset + 1);
+  else
+    tag_len = tvb_reported_length_remaining(tvb, 0);
+
+  if (type && tag_no != TAG_ADVERTISEMENT_PROTOCOL) {
     expert_add_info_format(pinfo, item, &ei_ieee80211_tag_number,
                            "Unexpected IE %d (expected Advertisement "
                            "Protocol)", tag_no);
@@ -6415,7 +6647,8 @@ dissect_advertisement_protocol_common(packet_info *pinfo, proto_tree *tree,
   }
 
   left = tag_len;
-  offset += 2;
+  if (type) /* Skip past the header if there ... */
+    offset += 2;
   adv_tree = proto_tree_add_subtree(tree, tvb, offset, left,
                                  ett_adv_proto, &adv_item, "Advertisement Protocol element");
 
@@ -6471,7 +6704,7 @@ dissect_advertisement_protocol_common(packet_info *pinfo, proto_tree *tree,
       left   -= 1;
       if (oui == OUI_WFA) {
         proto_tree_add_item(adv_tuple_tree, hf_ieee80211_dpp_subtype, tvb, offset, 1, ENC_NA);
-        if (wfa_subtype == WFA_SUBTYPE_DPP) {
+        if (subtype && wfa_subtype == WFA_SUBTYPE_DPP) {
           *subtype = WFA_SUBTYPE_DPP;
           *subtype |= (tvb_get_guint8(tvb, offset) << 8);
         }
@@ -6860,7 +7093,7 @@ dissect_nai_realm_list(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo, int 
 static void
 dissect_3gpp_cellular_network_info(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo, int offset)
 {
-  guint8      iei, num;
+  guint8      iei, num, plmn_idx = 0;
   proto_item *item;
 
   /* See Annex A of 3GPP TS 24.234 v8.1.0 for description */
@@ -6881,9 +7114,18 @@ dissect_3gpp_cellular_network_info(proto_tree *tree, tvbuff_t *tvb, packet_info 
   proto_tree_add_item(tree, hf_ieee80211_3gpp_gc_num_plmns, tvb, offset, 1, ENC_LITTLE_ENDIAN);
   offset += 1;
   while (num > 0) {
+    proto_item *plmn_item = NULL;
+    proto_tree *plmn_tree = NULL;
+    guint plmn_val = 0;
+
     if (tvb_reported_length_remaining(tvb, offset) < 3)
       break;
-    dissect_e212_mcc_mnc_wmem_packet_str(tvb, pinfo, tree, offset, E212_NONE, TRUE);
+    plmn_val = tvb_get_letoh24(tvb, offset);
+    plmn_item = proto_tree_add_uint_format(tree, hf_ieee80211_3gpp_gc_plmn,
+                                tvb, offset, 3, plmn_val, "PLMN %d (0x%x)",
+                                plmn_idx++, plmn_val);
+    plmn_tree = proto_item_add_subtree(plmn_item, ett_ieee80211_3gpp_plmn);
+    dissect_e212_mcc_mnc_wmem_packet_str(tvb, pinfo, plmn_tree, offset, E212_NONE, TRUE);
     num--;
     offset += 3;
   }
@@ -6905,34 +7147,72 @@ dissect_domain_name_list(proto_tree *tree, tvbuff_t *tvb, int offset, int end)
   }
 }
 
-static void
-dissect_venue_url_list(proto_tree *tree, tvbuff_t *tvb, int offset, int end)
+static int
+dissect_hs20_subscription_remediation(tvbuff_t *tvb, packet_info *pinfo _U_,
+  proto_tree *tree, void *data _U_)
 {
-  guint8 len;
+  int offset = 0;
+  guint8 url_len = tvb_get_guint8(tvb, offset);
+  proto_item *pi = NULL;
 
-  while (offset < end) {
-    len = tvb_get_guint8(tvb, offset);
-    proto_item *pi = NULL;
-    proto_tree_add_item(tree, hf_ieee80211_ff_anqp_venue_url_len,
-                        tvb, offset, 1, ENC_NA);
-    offset += 1;
-    proto_tree_add_item(tree, hf_ieee80211_ff_anqp_venue_url_number,
-                        tvb, offset, 1, ENC_NA);
-    offset += 1;
-    pi = proto_tree_add_item(tree, hf_ieee80211_ff_anqp_venue_url,
-                        tvb, offset, len - 1, ENC_ASCII|ENC_NA);
+  proto_tree_add_item(tree, hf_hs20_subscription_remediation_url_len, tvb, offset,
+                        1, ENC_NA);
+  offset++;
+  if (tvb_reported_length_remaining(tvb, offset) >= url_len) {
+    pi = proto_tree_add_item(tree, hf_hs20_subscription_remediation_server_url,
+                        tvb, offset, url_len, ENC_ASCII|ENC_NA);
+    offset += url_len;
     PROTO_ITEM_SET_URL(pi);
-    offset += len - 1;
+    proto_tree_add_item(tree, hf_hs20_subscription_remediation_server_method,
+                        tvb, offset, 1, ENC_NA);
+    offset++;
   }
+
+  return offset;
 }
 
-#define HS20_ANQP_HS_QUERY_LIST 1
-#define HS20_ANQP_HS_CAPABILITY_LIST 2
-#define HS20_ANQP_OPERATOR_FRIENDLY_NAME 3
-#define HS20_ANQP_WAN_METRICS 4
-#define HS20_ANQP_CONNECTION_CAPABILITY 5
-#define HS20_ANQP_NAI_HOME_REALM_QUERY 6
+static int
+dissect_hs20_deauthentication_imminent(tvbuff_t *tvb, packet_info *pinfo _U_,
+  proto_tree *tree, void *data _U_)
+{
+  int offset = 0;
+  guint8 url_len = 0;
+  proto_item *pi = NULL;
+
+  proto_tree_add_item(tree, hf_hs20_deauth_reason_code, tvb, offset, 1, ENC_NA);
+  offset++;
+
+  proto_tree_add_item(tree, hf_hs20_reauth_delay, tvb, offset, 2,
+                        ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  url_len = tvb_get_guint8(tvb, offset);
+  proto_tree_add_item(tree, hf_hs20_deauth_reason_url_len, tvb, offset, 1,
+                        ENC_NA);
+  offset++;
+
+  if (tvb_reported_length_remaining(tvb, offset) >= url_len) {
+    pi = proto_tree_add_item(tree, hf_hs20_deauth_imminent_reason_url,
+                        tvb, offset, url_len, ENC_ASCII|ENC_NA);
+    offset += url_len;
+    PROTO_ITEM_SET_URL(pi);
+  }
+  return offset;
+}
+
+#define HS20_ANQP_HS_QUERY_LIST              1
+#define HS20_ANQP_HS_CAPABILITY_LIST         2
+#define HS20_ANQP_OPERATOR_FRIENDLY_NAME     3
+#define HS20_ANQP_WAN_METRICS                4
+#define HS20_ANQP_CONNECTION_CAPABILITY      5
+#define HS20_ANQP_NAI_HOME_REALM_QUERY       6
 #define HS20_ANQP_OPERATING_CLASS_INDICATION 7
+#define HS20_ANQP_OSU_PROVIDERS_LIST         8
+/* 9 is reserved */
+#define HS20_ANQP_ICON_REQUEST               10
+#define HS20_ANQP_ICON_BINARY_FILE           11
+#define HS20_ANQP_OPERATOR_ICON_METADATA     12
+#define HS20_ANQP_ADVICE_OF_CHARGE           13
 
 static const value_string hs20_anqp_subtype_vals[] = {
   { HS20_ANQP_HS_QUERY_LIST, "HS Query list" },
@@ -6942,6 +7222,11 @@ static const value_string hs20_anqp_subtype_vals[] = {
   { HS20_ANQP_CONNECTION_CAPABILITY, "Connection Capability" },
   { HS20_ANQP_NAI_HOME_REALM_QUERY, "NAI Home Realm Query" },
   { HS20_ANQP_OPERATING_CLASS_INDICATION, "Operating Class Indication" },
+  { HS20_ANQP_OSU_PROVIDERS_LIST, "OSU Providers List" },
+  { HS20_ANQP_ICON_REQUEST, "Icon Request" },
+  { HS20_ANQP_ICON_BINARY_FILE, "Icon Binary File" },
+  { HS20_ANQP_OPERATOR_ICON_METADATA, "Operator Icon Metadata" },
+  { HS20_ANQP_ADVICE_OF_CHARGE, "Advice of Charge" },
   { 0, NULL }
 };
 
@@ -6957,22 +7242,36 @@ dissect_hs20_anqp_hs_query_list(proto_tree *tree, tvbuff_t *tvb, int offset, int
 
 static void
 dissect_hs20_anqp_operator_friendly_name(proto_tree *tree, tvbuff_t *tvb,
-                                         packet_info *pinfo, int offset, int end)
+                                         packet_info *pinfo, int offset,
+                                         int end, int hf_array[],
+                                         gint ett_val)
 {
+  int ofn_index = 0;
+
   while (offset + 4 <= end) {
     guint8 vlen = tvb_get_guint8(tvb, offset);
-    proto_item *item = proto_tree_add_item(tree, hf_hs20_anqp_ofn_length,
-                                           tvb, offset, 1, ENC_LITTLE_ENDIAN);
+    proto_tree *ofn_tree = NULL;
+    proto_item *item = NULL, *pi = NULL;
+    int start_offset = offset;
+
+    ofn_tree = proto_tree_add_subtree_format(tree, tvb, offset, -1, ett_val,
+                                        &pi, "Friendly Name %d", ofn_index);
+
+    item = proto_tree_add_item(ofn_tree, hf_array[0],
+                               tvb, offset, 1, ENC_LITTLE_ENDIAN);
     offset++;
     if (vlen > end - offset || vlen < 3) {
       expert_add_info(pinfo, item, &ei_hs20_anqp_ofn_length);
       break;
     }
-    proto_tree_add_item(tree, hf_hs20_anqp_ofn_language,
+    proto_tree_add_item(tree, hf_array[1],
                         tvb, offset, 3, ENC_ASCII|ENC_NA);
-    proto_tree_add_item(tree, hf_hs20_anqp_ofn_name,
+    proto_tree_add_item(tree, hf_array[2],
                         tvb, offset + 3, vlen - 3, ENC_UTF_8|ENC_NA);
     offset += vlen;
+
+    proto_item_set_len(pi, offset - start_offset);
+    ofn_index++;
   }
 }
 
@@ -7044,7 +7343,7 @@ dissect_hs20_anqp_connection_capability(proto_tree *tree, tvbuff_t *tvb,
                                "ProtoPort Tuple - ip_proto=%u port_num=%u status=%s",
                                ip_proto, port_num,
                                val_to_str(status, hs20_cc_status_vals,
-                                          "Unknown (%u)"));
+                                          "Reserved (%u)"));
     proto_tree_add_item(tuple, hf_hs20_anqp_cc_proto_ip_proto,
                         tvb, offset, 1, ENC_LITTLE_ENDIAN);
     offset++;
@@ -7097,9 +7396,483 @@ dissect_hs20_anqp_oper_class_indic(proto_tree *tree, tvbuff_t *tvb, int offset, 
 }
 
 static int
+dissect_hs20_osu_friendly_names(proto_tree *tree, tvbuff_t *tvb,
+  packet_info *pinfo, int offset, int end _U_)
+{
+  int osu_fn_hf_array[3] = {hf_hs20_osu_friendly_name_length,
+                            hf_hs20_osu_friendly_name_language,
+                            hf_hs20_osu_friendly_name_name };
+  guint16 osu_fn_count = tvb_get_letohs(tvb, offset);
+  proto_tree *fn_tree = NULL;
+
+  proto_tree_add_item(tree, hf_hs20_osu_friendly_names_len, tvb, offset, 2,
+                        ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  fn_tree = proto_tree_add_subtree(tree, tvb, offset, osu_fn_count,
+                        ett_hs20_friendly_names_list, NULL,
+                        "Friendly Names List");
+
+  dissect_hs20_anqp_operator_friendly_name(fn_tree, tvb, pinfo, offset,
+                        offset + osu_fn_count,
+                        osu_fn_hf_array, ett_hs20_friendly_name_tree);
+
+  return offset + osu_fn_count;
+}
+
+static int
+dissect_hs20_osu_icon_available(proto_tree *tree, tvbuff_t *tvb,
+  packet_info *pinfo _U_, int offset, int end _U_, guint16 icon_index)
+{
+  proto_tree *icon_avail = NULL;
+  proto_item *pi = NULL;
+  int start_offset = offset;
+  guint8 icon_type_len = 0, icon_filename_len = 0;
+
+  icon_avail = proto_tree_add_subtree_format(tree, tvb, offset, -1,
+                        ett_hs20_osu_icon_tree, &pi,
+                        "Icon Available %d", icon_index);
+
+  proto_tree_add_item(icon_avail, hf_osu_icon_avail_width, tvb, offset, 2,
+                        ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  proto_tree_add_item(icon_avail, hf_osu_icon_avail_height, tvb, offset, 2,
+                        ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  proto_tree_add_item(icon_avail, hf_osu_icon_avail_lang_code, tvb, offset, 3,
+                        ENC_ASCII|ENC_NA);
+  offset += 3;
+
+  icon_type_len = tvb_get_guint8(tvb, offset);
+  proto_tree_add_item(icon_avail, hf_osu_icon_avail_icon_type_len, tvb, offset,
+                        1, ENC_NA);
+  offset++;
+
+  proto_tree_add_item(icon_avail, hf_osu_icon_avail_icon_type, tvb, offset,
+                        icon_type_len, ENC_ASCII|ENC_NA);
+  offset += icon_type_len;
+
+  icon_filename_len = tvb_get_guint8(tvb, offset);
+  proto_tree_add_item(icon_avail, hf_osu_icon_avail_filename_len, tvb, offset,
+                        1, ENC_NA);
+  offset++;
+
+  proto_tree_add_item(icon_avail, hf_osu_icon_avail_filename, tvb, offset,
+                        icon_filename_len, ENC_ASCII|ENC_NA);
+  offset += icon_filename_len;
+
+  proto_item_set_len(pi, offset - start_offset);
+
+  return offset;
+}
+
+static const value_string osu_method_vals[] = {
+  { 0, "OMA DM" },
+  { 1, "SOAP XML SPP" },
+  { 0, NULL },
+};
+
+static int
+dissect_hs20_osu_provider(proto_tree *tree, tvbuff_t *tvb,
+  packet_info *pinfo, int offset, int end, guint8 provider_index)
+{
+  proto_tree *prov_tree = NULL;
+  proto_item *osupi = NULL, *uri_pi = NULL;
+  int start_offset = offset;
+  guint8 osu_server_uri_len = 0;
+  guint8 osu_method_list_len = 0;
+  guint16 icons_avail = 0, icons_index = 0;
+  guint8 osu_nai_len = 0;
+  guint16 osu_service_desc_len = 0;
+
+  prov_tree = proto_tree_add_subtree_format(tree, tvb, offset, -1,
+                        ett_hs20_osu_provider_tree, &osupi,
+                        "OSU Provider %d", provider_index);
+
+  proto_tree_add_item(prov_tree, hf_hs20_osu_prov_length, tvb, offset, 2,
+                        ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  offset = dissect_hs20_osu_friendly_names(prov_tree, tvb, pinfo, offset, end);
+
+  proto_item_set_len(osupi, offset - start_offset);
+
+  osu_server_uri_len = tvb_get_guint8(tvb, offset);
+  proto_tree_add_item(prov_tree, hf_hs20_osu_server_uri_len, tvb, offset, 1,
+                        ENC_NA);
+  offset++;
+
+  uri_pi = proto_tree_add_item(prov_tree, hf_hs20_osu_server_uri, tvb, offset,
+                        osu_server_uri_len, ENC_ASCII|ENC_NA);
+  offset += osu_server_uri_len;
+  PROTO_ITEM_SET_URL(uri_pi);
+
+  osu_method_list_len = tvb_get_guint8(tvb, offset);
+  proto_tree_add_item(prov_tree, hf_hs20_osu_method_list_len, tvb, offset, 1,
+                        ENC_NA);
+  offset++;
+
+  if (osu_method_list_len > 0) {
+    proto_tree *osu_method_list = NULL;
+    guint8 osu_method_list_index = 0;
+
+    osu_method_list = proto_tree_add_subtree(prov_tree, tvb, offset,
+                                osu_method_list_len,
+                                ett_hs20_osu_provider_method_list,
+                                NULL, "OSU Method List");
+    while (osu_method_list_len > osu_method_list_index) {
+      proto_item *pi = NULL;
+      guint8 method = tvb_get_guint8(tvb, offset);
+
+      pi = proto_tree_add_item(osu_method_list, hf_hs20_osu_method_val, tvb,
+                        offset, 1, ENC_NA);
+      proto_item_append_text(pi, ": %s",
+                                val_to_str(method, osu_method_vals,
+                                        "Reserved"));
+      offset++;
+      osu_method_list_index++;
+    }
+  }
+
+  icons_avail = tvb_get_letohs(tvb, offset);
+  proto_tree_add_item(prov_tree, hf_hs20_icons_avail_len, tvb, offset, 2,
+                        ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  if (icons_avail > 0) {
+    proto_tree *icon_list = NULL;
+    proto_item *pi = NULL;
+
+    start_offset = offset;
+
+    icon_list = proto_tree_add_subtree(prov_tree, tvb, offset, -1,
+                                ett_osu_icons_avail_list, &pi,
+                                "Icons Available");
+
+    while ((offset - start_offset) < icons_avail) {
+      offset = dissect_hs20_osu_icon_available(icon_list, tvb, pinfo, offset,
+                                end, icons_index);
+      icons_index++;
+    }
+
+    proto_item_set_len(pi, offset - start_offset);
+  }
+
+  osu_nai_len = tvb_get_guint8(tvb, offset);
+  proto_tree_add_item(prov_tree, hf_hs20_osu_nai_len, tvb, offset, 1, ENC_NA);
+  offset++;
+
+  if (osu_nai_len > 0) {
+    proto_tree_add_item(prov_tree, hf_hs20_osu_nai, tvb, offset,
+                        osu_nai_len, ENC_NA);
+    offset += osu_nai_len;
+  }
+
+  osu_service_desc_len = tvb_get_letohs(tvb, offset);
+  proto_tree_add_item(prov_tree, hf_hs20_osu_service_desc_len, tvb, offset, 2,
+                        ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  if (osu_service_desc_len > 0) {
+    proto_tree *desc_tree = NULL;
+    proto_item *pi = NULL;
+    guint8 service_desc_index = 0;
+
+    start_offset = offset;
+    desc_tree = proto_tree_add_subtree(prov_tree, tvb, offset, -1,
+                                ett_hs20_osu_service_desc_list, &pi,
+                                "OSU Service Description List");
+
+    while ((offset - start_offset) < osu_service_desc_len) {
+      proto_tree *desc_duple = NULL;
+      guint8 serv_desc_len = tvb_get_guint8(tvb, offset);
+
+      desc_duple = proto_tree_add_subtree_format(desc_tree, tvb, offset,
+                                1 + serv_desc_len,
+                                ett_hs20_osu_service_desc_tree, NULL,
+                                "OSU Service Description Duple %d",
+                                service_desc_index);
+
+      proto_tree_add_item(desc_duple, hf_hs20_osu_service_desc_duple_len, tvb,
+                                offset, 1, ENC_NA);
+      offset++;
+
+      proto_tree_add_item(desc_duple, hf_hs20_osu_service_desc_lang, tvb, offset,
+                                3, ENC_ASCII|ENC_NA);
+      offset += 3;
+
+      proto_tree_add_item(desc_duple, hf_hs20_osu_service_desc, tvb, offset,
+                                serv_desc_len - 3, ENC_ASCII|ENC_NA);
+      offset += serv_desc_len - 3;
+
+      service_desc_index++;
+    }
+
+    proto_item_set_len(pi, offset - start_offset);
+  }
+
+  return end;
+}
+
+static void
+dissect_hs20_anqp_osu_providers_list(proto_tree *tree, tvbuff_t *tvb,
+  packet_info *pinfo, int offset, int end)
+{
+  guint8 ssid_len = tvb_get_guint8(tvb, offset);
+  guint8 osu_prov_count = 0, osu_prov_index = 0;
+
+  proto_tree_add_item(tree, hf_hs20_osu_providers_list_ssid_len, tvb, offset, 1,
+                        ENC_NA);
+  offset++;
+
+  proto_tree_add_item(tree, hf_hs20_osu_providers_ssid, tvb, offset, ssid_len,
+                        ENC_UTF_8|ENC_NA);
+  offset += ssid_len;
+
+  osu_prov_count = tvb_get_guint8(tvb, offset);
+  proto_tree_add_item(tree, hf_hs20_osu_providers_count, tvb, offset, 1,
+                        ENC_NA);
+  offset++;
+
+  if (osu_prov_count > 0) {
+    int start_offset = offset;
+    proto_item *pi = NULL;
+    proto_tree *osu_prov_list = NULL;
+
+    osu_prov_list = proto_tree_add_subtree(tree, tvb, offset, -1,
+                        ett_hs20_osu_providers_list, &pi,
+                        "OSU Providers List");
+    while (offset < end && osu_prov_count > osu_prov_index) {
+      offset = dissect_hs20_osu_provider(osu_prov_list, tvb, pinfo, offset, end,
+                        osu_prov_index);
+      osu_prov_index++;
+    }
+
+    proto_item_set_len(pi, offset - start_offset);
+  }
+}
+
+static void
+dissect_hs20_anqp_icon_request(proto_tree *tree, tvbuff_t *tvb, int offset,
+  int end)
+{
+  proto_tree_add_item(tree, hf_hs20_icon_request_filename, tvb, offset,
+                        end - offset, ENC_UTF_8|ENC_NA);
+}
+
+static const value_string hs20_icon_download_status_vals[] = {
+  { 0, "Success" },
+  { 1, "File not found" },
+  { 2, "Unspecified file error" },
+  { 0, NULL }
+};
+
+static void
+dissect_hs20_anqp_icon_binary_file(proto_tree *tree, tvbuff_t *tvb, int offset,
+  int end _U_)
+{
+  guint8 icon_download_status = tvb_get_guint8(tvb, offset);
+  proto_item *pi = NULL;
+  guint8 icon_type_len = 0;
+  guint16 icon_binary_data_len = 0;
+
+  pi = proto_tree_add_item(tree, hf_hs20_icon_binary_file_status, tvb, offset, 1,
+                        ENC_NA);
+  offset++;
+  proto_item_append_text(pi, ": %s",
+                         val_to_str(icon_download_status,
+                                    hs20_icon_download_status_vals,
+                                    "Reserved (%u)"));
+
+  icon_type_len = tvb_get_guint8(tvb, offset);
+  proto_tree_add_item(tree, hf_hs20_icon_type_length, tvb, offset, 1, ENC_NA);
+  offset++;
+
+  proto_tree_add_item(tree, hf_hs20_icon_type, tvb, offset, icon_type_len,
+                        ENC_UTF_8|ENC_NA);
+  offset += icon_type_len;
+
+  icon_binary_data_len = tvb_get_letohs(tvb, offset);
+  proto_tree_add_item(tree, hf_hs20_icon_binary_data_len, tvb, offset, 2,
+                        ENC_BIG_ENDIAN);
+  offset += 2;
+
+  proto_tree_add_item(tree, hf_hs20_icon_binary_data, tvb, offset,
+                        icon_binary_data_len, ENC_NA);
+}
+
+static void
+dissect_hs20_anqp_operator_icon_metadata(proto_tree *tree, tvbuff_t *tvb,
+  int offset, int end _U_)
+{
+  proto_item *pi = NULL;
+  int start_offset = offset;
+  guint8 icon_type_len = 0, icon_filename_len = 0;
+
+  proto_tree_add_item(tree, hf_osu_icon_avail_width, tvb, offset, 2,
+                        ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  proto_tree_add_item(tree, hf_osu_icon_avail_height, tvb, offset, 2,
+                        ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  proto_tree_add_item(tree, hf_osu_icon_avail_lang_code, tvb, offset, 3,
+                        ENC_ASCII|ENC_NA);
+  offset += 3;
+
+  icon_type_len = tvb_get_guint8(tvb, offset);
+  proto_tree_add_item(tree, hf_osu_icon_avail_icon_type_len, tvb, offset,
+                        1, ENC_NA);
+  offset++;
+
+  proto_tree_add_item(tree, hf_osu_icon_avail_icon_type, tvb, offset,
+                        icon_type_len, ENC_ASCII|ENC_NA);
+  offset += icon_type_len;
+
+  icon_filename_len = tvb_get_guint8(tvb, offset);
+  proto_tree_add_item(tree, hf_osu_icon_avail_filename_len, tvb, offset,
+                        1, ENC_NA);
+  offset++;
+
+  proto_tree_add_item(tree, hf_osu_icon_avail_filename, tvb, offset,
+                        icon_filename_len, ENC_ASCII|ENC_NA);
+  offset += icon_filename_len;
+
+  proto_item_set_len(pi, offset - start_offset);
+}
+
+static void
+dissect_anqp_venue_url(proto_tree *tree, tvbuff_t *tvb, int offset, int end)
+{
+  guint16 url_duple_index = 0;
+
+  while (offset < end) {
+    proto_tree *venue_url = NULL;
+    proto_item *url_pi = NULL;
+    guint8 url_duple_len = tvb_get_guint8(tvb, offset);
+
+    venue_url = proto_tree_add_subtree_format(tree, tvb, offset,
+                        url_duple_len + 1, ett_hs20_venue_url, NULL,
+                        "Venue URL Duple %d", url_duple_index);
+
+    proto_tree_add_item(venue_url, hf_hs20_anqp_venue_url_length, tvb, offset,
+                        1, ENC_NA);
+    offset++;
+
+    proto_tree_add_item(venue_url, hf_hs20_anqp_venue_number, tvb, offset, 1,
+                        ENC_NA);
+    offset++;
+
+    url_pi = proto_tree_add_item(venue_url, hf_hs20_anqp_venue_url, tvb, offset,
+                        url_duple_len -1, ENC_ASCII|ENC_NA);
+    PROTO_ITEM_SET_URL(url_pi);
+
+    offset += (url_duple_len - 1);
+
+    url_duple_index++;
+  }
+}
+
+static const value_string advice_of_charge_type_vals[] = {
+  { 0, "Time-based" },
+  { 1, "Data-volume-based" },
+  { 2, "Time-and-data-volume-based" },
+  { 3, "Unlimited" },
+  { 0, NULL }
+};
+
+static void
+dissect_hs20_anqp_advice_of_charge(proto_tree *tree, tvbuff_t *tvb, int offset,
+  int end _U_)
+{
+  guint16 toc_index = 0;
+
+  while (offset < end) {
+    guint16 adv_charge_len = tvb_get_letohs(tvb, offset);
+    proto_tree *aoc_tree = NULL;
+    proto_tree *plan_info_tree = NULL;
+    proto_item *pi = NULL, *tpi = NULL;
+    int start_offset = offset;
+    guint8 aoc_type = 0, nai_realm_len = 0;
+    guint8 plan_index = 0;
+    guint16 plan_tot_len = 0;
+    int plan_offset = 0;
+
+    aoc_tree = proto_tree_add_subtree_format(tree, tvb, offset, -1,
+                        ett_hs20_advice_of_charge, &pi,
+                        "Advice of Charge Duple %d", toc_index);
+    proto_tree_add_item(aoc_tree, hf_hs20_anqp_advice_of_charge_length, tvb,
+                        offset, 2, ENC_LITTLE_ENDIAN);
+    offset += 2;
+
+    aoc_type = tvb_get_guint8(tvb, offset);
+    tpi = proto_tree_add_item(aoc_tree, hf_hs20_anqp_advice_of_charge_type, tvb,
+                        offset, 1, ENC_NA);
+    offset++;
+    proto_item_append_text(tpi, ": %s",
+                                val_to_str(aoc_type,
+                                        advice_of_charge_type_vals,
+                                        "Reserved (%u)"));
+
+    proto_tree_add_item(aoc_tree, hf_hs20_anqp_aoc_nai_realm_encoding, tvb,
+                        offset, 1, ENC_NA);
+    offset++;
+
+    nai_realm_len = tvb_get_guint8(tvb, offset);
+    proto_tree_add_item(aoc_tree, hf_hs20_anqp_aoc_nai_realm_len, tvb, offset,
+                        1, ENC_NA);
+    offset++;
+
+    proto_tree_add_item(aoc_tree, hf_hs20_anqp_aoc_nai_realm, tvb, offset,
+                        nai_realm_len, ENC_UTF_8|ENC_NA);
+    offset += nai_realm_len;
+
+    plan_tot_len = adv_charge_len - 3 - nai_realm_len;
+    plan_offset = offset;
+
+    while (offset < (plan_offset + plan_tot_len)) {
+        guint16 plan_len = tvb_get_letohs(tvb, offset);
+
+        plan_info_tree = proto_tree_add_subtree_format(aoc_tree, tvb, offset,
+                                plan_len + 2, ett_hs20_aoc_plan, NULL,
+                                "Plan #%u", plan_index);
+
+        proto_tree_add_item(plan_info_tree, hf_hs20_anqp_aoc_plan_len, tvb,
+                        offset, 2, ENC_LITTLE_ENDIAN);
+        offset += 2;
+
+        proto_tree_add_item(plan_info_tree, hf_hs20_anqp_aoc_plan_lang, tvb,
+                        offset, 3, ENC_ASCII|ENC_NA);
+        offset += 3;
+
+        proto_tree_add_item(plan_info_tree, hf_hs20_anqp_aoc_plan_curcy, tvb,
+                        offset, 3, ENC_ASCII|ENC_NA);
+        offset += 3;
+
+        proto_tree_add_item(plan_info_tree, hf_hs20_anqp_aoc_plan_information,
+                        tvb, offset, plan_len - 6, ENC_UTF_8|ENC_NA);
+        offset += plan_len - 6;
+
+        plan_index++;
+    }
+
+    proto_item_set_len(pi, offset - start_offset);
+
+    toc_index++;
+  }
+}
+
+static int
 dissect_hs20_anqp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
   guint8 subtype;
+  int ofn_hf_array[3] = {hf_hs20_anqp_ofn_length,
+                         hf_hs20_anqp_ofn_language,
+                         hf_hs20_anqp_ofn_name };
+
   int end = tvb_reported_length(tvb);
   int offset = 0;
   anqp_info_dissector_data_t* anqp_data = (anqp_info_dissector_data_t*)data;
@@ -7109,11 +7882,11 @@ dissect_hs20_anqp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
   subtype = tvb_get_guint8(tvb, offset);
   proto_item_append_text(tree, " - HS 2.0 %s",
                          val_to_str(subtype, hs20_anqp_subtype_vals,
-                                    "Unknown (%u)"));
+                                    "Reserved (%u)"));
   if (anqp_data->idx == 0) {
     col_append_fstr(pinfo->cinfo, COL_INFO, " HS 2.0 %s",
                     val_to_str(subtype, hs20_anqp_subtype_vals,
-                               "Unknown (%u)"));
+                               "Reserved (%u)"));
   } else if (anqp_data->idx == 1) {
     col_append_str(pinfo->cinfo, COL_INFO, ", ..");
   }
@@ -7133,7 +7906,8 @@ dissect_hs20_anqp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
     dissect_hs20_anqp_hs_capability_list(tree, tvb, offset, end);
     break;
   case HS20_ANQP_OPERATOR_FRIENDLY_NAME:
-    dissect_hs20_anqp_operator_friendly_name(tree, tvb, pinfo, offset, end);
+    dissect_hs20_anqp_operator_friendly_name(tree, tvb, pinfo, offset, end,
+                                ofn_hf_array, ett_hs20_ofn_tree);
     break;
   case HS20_ANQP_WAN_METRICS:
     dissect_hs20_anqp_wan_metrics(tree, tvb, offset, anqp_data->request);
@@ -7146,6 +7920,21 @@ dissect_hs20_anqp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
     break;
   case HS20_ANQP_OPERATING_CLASS_INDICATION:
     dissect_hs20_anqp_oper_class_indic(tree, tvb, offset, end);
+    break;
+  case HS20_ANQP_OSU_PROVIDERS_LIST:
+    dissect_hs20_anqp_osu_providers_list(tree, tvb, pinfo, offset, end);
+    break;
+  case HS20_ANQP_ICON_REQUEST:
+    dissect_hs20_anqp_icon_request(tree, tvb, offset, end);
+    break;
+  case HS20_ANQP_ICON_BINARY_FILE:
+    dissect_hs20_anqp_icon_binary_file(tree, tvb, offset, end);
+    break;
+  case HS20_ANQP_OPERATOR_ICON_METADATA:
+    dissect_hs20_anqp_operator_icon_metadata(tree, tvb, offset, end);
+    break;
+  case HS20_ANQP_ADVICE_OF_CHARGE:
+    dissect_hs20_anqp_advice_of_charge(tree, tvb, offset, end);
     break;
   default:
     if (offset == end)
@@ -7243,9 +8032,6 @@ dissect_anqp_info(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo, int offse
   case ANQP_INFO_DOMAIN_NAME_LIST:
     dissect_domain_name_list(tree, tvb, offset, offset + len);
     break;
-  case ANQP_INFO_VENUE_URL:
-    dissect_venue_url_list(tree, tvb, offset, offset + len);
-    break;
   case ANQP_INFO_NEIGHBOR_REPORT:
     {
       tvbuff_t *report_tvb;
@@ -7268,6 +8054,12 @@ dissect_anqp_info(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo, int offse
     {
       proto_tree_add_item(tree, hf_ieee80211_ff_anqp_info, tvb, offset, len, ENC_NA);
     }
+    break;
+  case ANQP_INFO_VENUE_URL:
+    dissect_anqp_venue_url(tree, tvb, offset, offset + len);
+    break;
+  case ANQP_INFO_ADVICE_OF_CHARGE:
+    dissect_hs20_anqp_advice_of_charge(tree, tvb, offset, offset + len);
     break;
   default:
     proto_tree_add_item(tree, hf_ieee80211_ff_anqp_info,
@@ -9163,12 +9955,66 @@ wnm_tfs_resp(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo, int offset)
   return offset - start;
 }
 
+#define AP_DESCRIPTOR            0
+#define FIRMWARE_VERSION_CURRENT 1
+#define FIRMWARE_VERSION_NEW     2
+
+static guint
+dissect_wnm_subelements(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo _U_,
+  int offset) {
+  guint sub_elt_id = tvb_get_guint8(tvb, offset);
+  guint sub_elt_len = tvb_get_guint8(tvb, offset + 1);
+
+  proto_tree_add_item(tree, hf_ieee80211_wnm_sub_elt_id, tvb, offset, 1, ENC_NA);
+  offset++;
+
+  proto_tree_add_item(tree, hf_ieee80211_wnm_sub_elt_len, tvb, offset, 1, ENC_NA);
+  offset++;
+
+  switch (sub_elt_id) {
+  case AP_DESCRIPTOR:
+
+    break;
+
+  case FIRMWARE_VERSION_CURRENT:
+
+    break;
+
+  case FIRMWARE_VERSION_NEW:
+
+    break;
+  }
+
+  offset += sub_elt_len;
+  return offset;
+}
+
 static guint
 wnm_notification_req(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo, int offset)
 {
   int start = offset;
+  int len = 0;
+  guint8 wnm_type = 0;
+  guint8 wnm_sub_elt = 0;
+
   offset += add_ff_dialog_token(tree, tvb, pinfo, offset);
+  wnm_type = tvb_get_guint8(tvb, offset);
   offset += add_ff_wnm_notification_type(tree, tvb, pinfo, offset);
+  len = tvb_reported_length_remaining(tvb, offset);
+
+  if (wnm_type == 0) {
+    int offset_end = offset + len;
+    while (offset < offset_end) {
+      int start_offset = offset;
+      proto_tree *wnm_list = NULL;
+      proto_item *wnm_item = NULL;
+      wnm_list = proto_tree_add_subtree_format(tree, tvb, offset, -1,
+                        ett_wnm_notif_subelt,
+                        &wnm_item, "WNM Subelement %d", wnm_sub_elt);
+      offset = dissect_wnm_subelements(wnm_list, tvb, pinfo, offset);
+      proto_item_set_len(wnm_item, offset - start_offset);
+    }
+  }
   return offset - start;
 }
 
@@ -10151,7 +10997,7 @@ add_ff_vht_compressed_beamforming_report(proto_tree *tree, tvbuff_t *tvb, packet
     gint8 snr;
     char edge_sign;
 
-    snr = (gint8) tvb_get_guint8(tvb, offset);
+    snr = tvb_get_gint8(tvb, offset);
 
     switch(snr) {
       case -128:
@@ -11301,6 +12147,185 @@ dissect_vendor_ie_wpawme(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo, in
   return offset;
 }
 
+/*
+ * Dissect a group data cipher suite which consists of an OUI and a one-byte
+ * selector: IEEE802.11 2012 Figure 9-256.
+ *
+ * Accepts a two entry array of header fields so we can use this elsewhere.
+ */
+static int dissect_group_data_cipher_suite(tvbuff_t *tvb, packet_info *pinfo _U_,
+    proto_tree *tree, int offset, int *hf_array, gint ett_val, char *label)
+{
+  proto_tree *gdcs_tree = NULL;
+
+  gdcs_tree = proto_tree_add_subtree(tree, tvb, offset, 4, ett_val, NULL,
+                         label);
+  proto_tree_add_item(gdcs_tree, hf_array[0], tvb, offset, 3, ENC_BIG_ENDIAN);
+  offset += 3;
+  proto_tree_add_item(gdcs_tree, hf_array[1], tvb, offset, 1, ENC_NA);
+  offset += 1;
+
+  return offset;
+}
+
+/*
+ * Handle the HS 2.0 rev 2 OSU Server-only authenticated layer 2 Encryption
+ * Network element. This is almost the same format as the RSNE so maybe some
+ * common code can be used.
+ */
+static int
+dissect_hs20_osen(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void* data _U_)
+{
+  int offset = 0;
+  int hf_array[2] = { hf_group_data_cipher_suite_oui,
+                       hf_group_data_cipher_suite_type };
+  proto_tree *pwc_list = NULL;
+  proto_item *pwcsi = NULL;
+  guint16 pwc_count = 0, pwc_index = 0;
+  guint16 akms_count = 0, akms_index = 0;
+  static const int *osen_rsn_cap[] = {
+    &hf_osen_rsn_cap_preauth,
+    &hf_osen_rsn_cap_no_pairwise,
+    &hf_osen_rsn_cap_ptksa_replay_counter,
+    &hf_osen_rsn_cap_gtksa_replay_counter,
+    &hf_osen_rsn_cap_mfpr,
+    &hf_osen_rsn_cap_mfpc,
+    &hf_osen_rsn_cap_jmr,
+    &hf_osen_rsn_cap_peerkey,
+    &hf_osen_rsn_spp_a_msdu_capable,
+    &hf_osen_rsn_spp_a_msdu_required,
+    &hf_osen_rsn_pbac,
+    &hf_osen_extended_key_id_iaf,
+    &hf_osen_reserved,
+    NULL
+  };
+  guint16 pmkid_count = 0, pmkid_index = 0;
+  int gmcs_array[2] = { hf_osen_group_management_cipher_suite_oui,
+                        hf_osen_group_management_cipher_suite_type };
+
+  offset = dissect_group_data_cipher_suite(tvb, pinfo, tree, offset, hf_array,
+                        ett_osen_group_data_cipher_suite,
+                        "OSEN Group Data Cipher Suite");
+
+  pwc_count = tvb_get_letohs(tvb, offset);
+  proto_tree_add_item(tree, hf_osen_pcs_count, tvb, offset,
+                      2, ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  if (pwc_count > 0) {
+    int start_offset = offset;
+    pwc_list = proto_tree_add_subtree(tree, tvb, offset, -1,
+                        ett_osen_pairwise_cipher_suites, &pwcsi,
+                        "OSEN Pairwise Cipher Suite List");
+
+    while (pwc_count > 0) {
+      if (tvb_reported_length_remaining(tvb, offset) >= 4) {
+        int hf_array2[2] = { hf_osen_pairwise_cipher_suite_oui,
+                            hf_osen_pairwise_cipher_suite_type };
+        char label[128];
+
+        g_snprintf(label, sizeof(label), "OSEN Pairwise Cipher Suite %d", pwc_index);
+        offset = dissect_group_data_cipher_suite(tvb, pinfo, pwc_list,
+                        offset, hf_array2, ett_osen_pairwise_cipher_suite,
+                        label);
+        pwc_index++;
+        pwc_count--;
+      } else {
+        /* Insert the remaining? Expert Info? */
+        offset += tvb_reported_length_remaining(tvb, offset);
+        break;
+      }
+    }
+
+    proto_item_set_len(pwcsi, offset - start_offset);
+  }
+
+  if (tvb_reported_length_remaining(tvb, offset) == 0) {
+    return tvb_captured_length(tvb);
+  }
+
+  /* Now handle the AKM Suites */
+  akms_count = tvb_get_letohs(tvb, offset);
+  proto_tree_add_item(tree, hf_osen_akm_count, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  if (akms_count > 0) {
+    int start_offset = offset;
+    proto_tree *akm_list = NULL;
+    proto_item *akmcsi = NULL;
+
+    akm_list = proto_tree_add_subtree(tree, tvb, offset, -1,
+                        ett_osen_akm_cipher_suites, &akmcsi,
+                        "OSEN AKM Cipher Suite List");
+
+    while (akms_count > 0) {
+      if (tvb_reported_length_remaining(tvb, offset) >= 4) {
+        int hf_array3[2] = { hf_osen_akm_cipher_suite_oui,
+                             hf_osen_akm_cipher_suite_type};
+        char label[128];
+
+        g_snprintf(label, sizeof(label), "OSEN AKM Cipher Suite %d", akms_index);
+        offset = dissect_group_data_cipher_suite(tvb, pinfo, akm_list,
+                          offset, hf_array3, ett_osen_akm_cipher_suite,
+                          label);
+        akms_index++;
+        akms_count--;
+      } else {
+        /* Expert info? */
+        offset += tvb_reported_length_remaining(tvb, offset);
+        break;
+      }
+    }
+    proto_item_set_len(akmcsi, offset - start_offset);
+  }
+
+  /* Any more? */
+  if (tvb_reported_length_remaining(tvb, offset) == 0) {
+    return tvb_captured_length(tvb);
+  }
+
+  proto_tree_add_bitmask_with_flags(tree, tvb, offset, hf_osen_rsn_cap_flags,
+                                    ett_osen_rsn_cap_tree, osen_rsn_cap,
+                                    ENC_LITTLE_ENDIAN, BMT_NO_APPEND);
+  offset += 2;
+
+  /* Any more? */
+  if (tvb_reported_length_remaining(tvb, offset) == 0) {
+    return tvb_captured_length(tvb);
+  }
+
+  pmkid_count = tvb_get_letohs(tvb, offset);
+  proto_tree_add_item(tree, hf_osen_pmkid_count, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  if (pmkid_count > 0) {
+    proto_tree *pmkid_list = NULL;
+
+    pmkid_list = proto_tree_add_subtree(tree, tvb, offset, pmkid_count * 16,
+                                ett_osen_pmkid_list, NULL,
+                                "OSEN PKMID List");
+
+    while (pmkid_count > 0) {
+      proto_tree *pmkid_tree = NULL;
+
+      pmkid_tree = proto_tree_add_subtree_format(pmkid_list, tvb,offset, 16,
+                                ett_osen_pmkid_tree, NULL,
+                                "OSEN PKMID %d", pmkid_index);
+      proto_tree_add_item(pmkid_tree, hf_osen_pmkid, tvb, offset, 16,
+                          ENC_NA);
+      offset += 16;
+      pmkid_index++;
+      pmkid_count--;
+    }
+  }
+
+  offset = dissect_group_data_cipher_suite(tvb, pinfo, tree, offset, gmcs_array,
+                        ett_osen_group_management_cipher_suite,
+                        "OSEN Group Management Cipher Suite");
+
+  return offset;
+}
+
 static const value_string hs20_indication_release_number_vals[] = {
   { 0, "Release 1" },
   { 1, "Release 2" },
@@ -11314,12 +12339,31 @@ dissect_hs20_indication(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
     &hf_hs20_indication_dgaf_disabled,
     &hf_hs20_indication_pps_mo_id_present,
     &hf_hs20_indication_anqp_domain_id_present,
+    &hf_hs20_reserved,
     &hf_hs20_indication_release_number,
     NULL
   };
+  int len = tvb_captured_length(tvb);
+  int offset = 0;
+  guint8 indic = tvb_get_guint8(tvb, offset);
 
-  proto_tree_add_bitmask_list(tree, tvb, 0, 1, ieee80211_hs20_indication, ENC_LITTLE_ENDIAN);
-  return tvb_captured_length(tvb);
+  proto_tree_add_bitmask_list(tree, tvb, offset, 1, ieee80211_hs20_indication,
+                              ENC_NA);
+  offset++;
+
+  if (len >= 3 && (indic & 0x02)) { /* Contains a PPS MO ID field ... display it. */
+      proto_tree_add_item(tree, hf_hs20_indication_pps_mo_id, tvb, offset,
+                          2, ENC_LITTLE_ENDIAN);
+      offset += 2;
+  }
+
+  if ((len >= (offset + 2)) && (indic & 0x04)) {
+     proto_tree_add_item(tree, hf_hs20_indication_anqp_domain_id, tvb, offset,
+                         2, ENC_LITTLE_ENDIAN);
+     offset += 2;
+  }
+
+  return offset;
 }
 
 static void
@@ -11726,6 +12770,53 @@ dissect_vendor_ie_mikrotik(proto_item *item _U_, proto_tree *ietree,
   }
 }
 
+#define AEROHIVE_HOSTNAME 33
+static const value_string ieee80211_vs_aerohive_type_vals[] = {
+  { AEROHIVE_HOSTNAME, "Host Name"},
+  { 0,                 NULL }
+};
+static void
+dissect_vendor_ie_aerohive(proto_item *item _U_, proto_tree *ietree,
+                          tvbuff_t *tvb, int offset, guint32 tag_len, packet_info *pinfo)
+{
+  guint32 type, length;
+  const guint8* hostname;
+  proto_item *ti_len;
+
+  /* VS OUI Type */
+  type = tvb_get_guint8(tvb, offset);
+  offset += 1;
+  tag_len -= 1;
+
+  switch(type){
+    case AEROHIVE_HOSTNAME: /* Unknown (2 bytes) + Host Name Length (1 byte) + Host Name */
+
+      proto_item_append_text(item, ": %s", val_to_str_const(type, ieee80211_vs_aerohive_type_vals, "Unknown"));
+
+      proto_tree_add_item(ietree, hf_ieee80211_vs_aerohive_unknown, tvb, offset, 2, ENC_NA);
+      offset += 2;
+      tag_len -= 2;
+
+      ti_len = proto_tree_add_item_ret_uint(ietree, hf_ieee80211_vs_aerohive_hostname_length, tvb, offset, 1, ENC_NA, &length);
+      offset += 1;
+      tag_len -= 1;
+
+      if (tag_len < length) {
+        expert_add_info_format(pinfo, ti_len, &ei_ieee80211_tag_length, "Tag length < Host Name Length");
+        length = tag_len;
+      }
+
+      proto_tree_add_item_ret_string(ietree, hf_ieee80211_vs_aerohive_hostname, tvb, offset, length, ENC_ASCII|ENC_NA, wmem_packet_scope(), &hostname);
+      proto_item_append_text(item, " (%s)", hostname);
+
+    break;
+
+    default:
+      proto_tree_add_item(ietree, hf_ieee80211_vs_aerohive_data, tvb, offset, tag_len, ENC_NA);
+    break;
+  }
+}
+
 enum vs_nintendo_type {
   NINTENDO_SERVICES = 0x11,
   NINTENDO_CONSOLEID = 0xF0
@@ -11921,7 +13012,10 @@ dissect_qos_capability(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo, int 
   return offset;
 }
 
-/* 7.3.2.25 RSN information element */
+/*
+ * 7.3.2.25 RSNE information element. Common format with OSEN except the
+ * verison... should refactor
+ */
 static int
 dissect_rsn_ie(packet_info *pinfo, proto_tree *tree, tvbuff_t *tvb,
                int offset, guint32 tag_len, association_sanity_check_t *association_sanity_check)
@@ -12366,7 +13460,7 @@ dissect_vht_mcs_set(proto_tree *tree, tvbuff_t *tvb, int offset)
   mcs_tree = proto_item_add_subtree(ti, ett_vht_mcsset_tree);
 
   /* B0 - B15 */
-  proto_tree_add_bitmask_with_flags(tree, tvb, offset, hf_ieee80211_vht_mcsset_rx_mcs_map,
+  proto_tree_add_bitmask_with_flags(mcs_tree, tvb, offset, hf_ieee80211_vht_mcsset_rx_mcs_map,
                                     ett_vht_rx_mcsbit_tree, ieee80211_vht_mcsset_rx_max_mcs,
                                     ENC_LITTLE_ENDIAN, BMT_NO_APPEND);
   offset += 2;
@@ -12374,18 +13468,24 @@ dissect_vht_mcs_set(proto_tree *tree, tvbuff_t *tvb, int offset)
   /* B16 - B28 13 bits*/
   proto_tree_add_item(mcs_tree, hf_ieee80211_vht_mcsset_rx_highest_long_gi, tvb, offset, 2, ENC_LITTLE_ENDIAN);
 
-  /* B29 - B31 2 reserved bits*/
+  /* B29 - B31 Max NSTS Total*/
+  proto_tree_add_item(mcs_tree, hf_ieee80211_vht_mcsset_max_nsts_total, tvb, offset, 2, ENC_LITTLE_ENDIAN);
 
   offset += 2;
 
   /* B32 - B47 */
-  proto_tree_add_bitmask_with_flags(tree, tvb, offset, hf_ieee80211_vht_mcsset_tx_mcs_map,
+  proto_tree_add_bitmask_with_flags(mcs_tree, tvb, offset, hf_ieee80211_vht_mcsset_tx_mcs_map,
                                     ett_vht_tx_mcsbit_tree, ieee80211_vht_mcsset_tx_max_mcs,
                                     ENC_LITTLE_ENDIAN, BMT_NO_APPEND);
   offset += 2;
   /* B48 - B60 13 bits */
   proto_tree_add_item(mcs_tree, hf_ieee80211_vht_mcsset_tx_highest_long_gi, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-  /* B61 - B63 2 reserved bits*/
+
+  /* B61 */
+  proto_tree_add_item(mcs_tree, hf_ieee80211_vht_mcsset_ext_nss_bw_cap, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+
+  /* B62 - B63 2 reserved bits*/
+  proto_tree_add_item(mcs_tree, hf_ieee80211_vht_mcsset_reserved, tvb, offset, 2, ENC_LITTLE_ENDIAN);
 
   offset += 2;
   return offset;
@@ -12601,19 +13701,21 @@ dissect_fast_bss_transition(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
   while (offset + 2 <= tag_len) {
     guint8 id, len;
     int s_end;
+    proto_item *ti;
+
     proto_tree_add_item(tree, hf_ieee80211_tag_ft_subelem_id,
                         tvb, offset, 1, ENC_LITTLE_ENDIAN);
     id = tvb_get_guint8(tvb, offset);
     offset += 1;
 
-    proto_tree_add_item(tree, hf_ieee80211_tag_ft_subelem_len,
-                        tvb, offset, 1, ENC_LITTLE_ENDIAN);
+    ti = proto_tree_add_item(tree, hf_ieee80211_tag_ft_subelem_len,
+                             tvb, offset, 1, ENC_LITTLE_ENDIAN);
     len = tvb_get_guint8(tvb, offset);
     offset += 1;
 
     if (offset + len > tag_len) {
-      proto_tree_add_string(tree, hf_ieee80211_tag_interpretation, tvb, offset,
-                            tag_len - offset, "Invalid FTIE subelement");
+      expert_add_info_format(pinfo, ti, &ei_ieee80211_tag_length,
+                            "FTIE subelement length is too large for the FTIE content length");
       return offset;
     }
 
@@ -13110,13 +14212,12 @@ dissect_mcs_set(proto_tree *tree, tvbuff_t *tvb, int offset, gboolean basic, gbo
   /* 16 byte Supported MCS set */
   if (vendorspecific)
   {
-    ti = proto_tree_add_string(tree, hf_ieee80211_mcsset_vs, tvb, offset, 16,
-      basic ? "Basic MCS Set" : "MCS Set");
+    ti = proto_tree_add_item(tree, hf_ieee80211_mcsset_vs, tvb, offset, 16, ENC_NA);
   } else
   {
-    ti = proto_tree_add_string(tree, hf_ieee80211_mcsset, tvb, offset, 16,
-      basic ? "Basic MCS Set" : "MCS Set");
+    ti = proto_tree_add_item(tree, hf_ieee80211_mcsset, tvb, offset, 16, ENC_NA);
   }
+  proto_item_append_text(ti, ": %s", basic ? "Basic MCS Set" : "MCS Set");
   mcs_tree = proto_item_add_subtree(ti, ett_mcsset_tree);
 
   /* Rx MCS Bitmask */
@@ -13253,31 +14354,31 @@ dissect_ht_info_ie_1_1(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
   int offset = 0;
   static const int *ieee80211_ht_info1_field[] = {
     &hf_ieee80211_ht_info_secondary_channel_offset,
-    &hf_ieee80211_ht_info_channel_width,
+    &hf_ieee80211_ht_info_sta_channel_width,
     &hf_ieee80211_ht_info_rifs_mode,
-    &hf_ieee80211_ht_info_psmp_stas_only,
-    &hf_ieee80211_ht_info_service_interval_granularity,
+    &hf_ieee80211_ht_info_reserved_b4_b7,
     NULL
   };
 
   static const int *ieee80211_ht_info2_field[] = {
-    &hf_ieee80211_ht_info_operating_mode,
+    &hf_ieee80211_ht_info_protection,
     &hf_ieee80211_ht_info_non_greenfield_sta_present,
-    &hf_ieee80211_ht_info_transmit_burst_limit,
+    &hf_ieee80211_ht_info_reserved_b11,
     &hf_ieee80211_ht_info_obss_non_ht_stas_present,
-    &hf_ieee80211_ht_info_reserved_1,
+    &hf_ieee80211_ht_info_channel_center_freq_seg_2,
+    &hf_ieee80211_ht_info_reserved_b21_b23,
     NULL
   };
 
   static const int *ieee80211_ht_info3_field[] = {
-    &hf_ieee80211_ht_info_reserved_2,
+    &hf_ieee80211_ht_info_reserved_b24_b29,
     &hf_ieee80211_ht_info_dual_beacon,
     &hf_ieee80211_ht_info_dual_cts_protection,
     &hf_ieee80211_ht_info_secondary_beacon,
     &hf_ieee80211_ht_info_lsig_txop_protection_full_support,
     &hf_ieee80211_ht_info_pco_active,
     &hf_ieee80211_ht_info_pco_phase,
-    &hf_ieee80211_ht_info_reserved_3,
+    &hf_ieee80211_ht_info_reserved_b36_b39,
     NULL
   };
 
@@ -14445,114 +15546,184 @@ static void
 dissect_a_control_umrs(proto_tree *tree, tvbuff_t *tvb, int offset,
   guint32 bits _U_, guint32 start_bit)
 {
-  start_bit += offset * 8;
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_umrs_he_tb_ppdu_len, tvb,
-                        start_bit, 5, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_umrs_ru_allocation, tvb,
-                        start_bit + 5, 8, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_dl_tx_power, tvb,
-                        start_bit + 13, 5, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_ul_target_rssi, tvb,
-                        start_bit + 18, 5, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_ul_mcs, tvb,
-                        start_bit + 23, 2, ENC_LITTLE_ENDIAN);
+  proto_tree *umrs_tree = NULL;
+  guint the_bits = (tvb_get_letohl(tvb, offset) >> start_bit) & 0x03FFFFFF;
+
+  /*
+   * We isolated the bits and moved them to the bottom ... so display them
+   */
+  umrs_tree = proto_tree_add_subtree_format(tree, tvb, offset, 4,
+                                ett_ieee80211_umrs_control,
+                                NULL, "UMRS Control: 0x%08x", the_bits);
+
+  proto_tree_add_uint(umrs_tree, hf_ieee80211_he_umrs_he_tb_ppdu_len, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(umrs_tree, hf_ieee80211_he_umrs_ru_allocation, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(umrs_tree, hf_ieee80211_he_dl_tx_power, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(umrs_tree, hf_ieee80211_he_ul_target_rssi, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(umrs_tree, hf_ieee80211_he_ul_mcs, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(umrs_tree, hf_ieee80211_he_ul_reserved, tvb,
+                        offset, 4, the_bits);
 }
 
 static void
 dissect_a_control_om(proto_tree *tree, tvbuff_t *tvb, int offset,
   guint32 bits _U_, guint32 start_bit)
 {
-  start_bit += offset * 8;
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_om_rx_nss, tvb, start_bit, 3,
-                        ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_om_channel_width, tvb,
-                        start_bit + 3, 2, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_om_ul_mu_disable, tvb,
-                        start_bit + 5, 1, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_om_tx_nsts, tvb, start_bit + 6,
-                        3, ENC_LITTLE_ENDIAN);
+  proto_tree *om_tree = NULL;
+  guint the_bits = (tvb_get_letohl(tvb, offset) >> start_bit) & 0x000000FFF;
+
+  /*
+   * We isolated the bits and moved them to the bottom ... so display them
+   */
+  om_tree = proto_tree_add_subtree_format(tree, tvb, offset, 4,
+                                ett_ieee80211_om_control,
+                                NULL, "OM Control: 0x%04x", the_bits);
+
+  proto_tree_add_uint(om_tree, hf_ieee80211_he_om_rx_nss, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(om_tree, hf_ieee80211_he_om_channel_width, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_boolean(om_tree, hf_ieee80211_he_om_ul_mu_disable, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(om_tree, hf_ieee80211_he_om_tx_nsts, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(om_tree, hf_ieee80211_he_om_reserved, tvb,
+                        offset, 4, the_bits);
 }
 
 static void
 dissect_a_control_hla(proto_tree *tree, tvbuff_t *tvb, int offset,
   guint32 bits _U_, guint32 start_bit)
 {
-  start_bit += offset * 8;
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_hla_unsolicited_mfb, tvb,
-                        start_bit, 1, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_hla_mrq, tvb,
-                        start_bit + 1, 1, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_hla_nss, tvb,
-                        start_bit + 2, 3, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_hla_he_mcs, tvb,
-                        start_bit + 5, 4, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_hla_dcm, tvb,
-                        start_bit +9, 1, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_hla_ru, tvb,
-                        start_bit + 10, 8, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_hla_bw, tvb,
-                        start_bit + 18, 2, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_hla_msi_ppdu_type, tvb,
-                        start_bit + 20, 3, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_hla_tx_bf, tvb,
-                        start_bit + 23, 1, ENC_LITTLE_ENDIAN);
+  proto_tree *hla_tree = NULL;
+  guint the_bits = (tvb_get_letohl(tvb, offset) >> start_bit) & 0x03FFFFFF;
+
+  /*
+   * We isolated the bits and moved them to the bottom ... so display them
+   */
+  hla_tree = proto_tree_add_subtree_format(tree, tvb, offset, 4,
+                                ett_ieee80211_hla_control,
+                                NULL, "HLA Control: 0x%08x", the_bits);
+
+  proto_tree_add_boolean(hla_tree, hf_ieee80211_he_hla_unsolicited_mfb, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_boolean(hla_tree, hf_ieee80211_he_hla_mrq, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(hla_tree, hf_ieee80211_he_hla_nss, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(hla_tree, hf_ieee80211_he_hla_he_mcs, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_boolean(hla_tree, hf_ieee80211_he_hla_dcm, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(hla_tree, hf_ieee80211_he_hla_ru, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(hla_tree, hf_ieee80211_he_hla_bw, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(hla_tree, hf_ieee80211_he_hla_msi_ppdu_type, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_boolean(hla_tree, hf_ieee80211_he_hla_tx_bf, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(hla_tree, hf_ieee80211_he_hla_reserved, tvb,
+                        offset, 4, the_bits);
 }
 
 static void
 dissect_a_control_bsr(proto_tree *tree, tvbuff_t *tvb, int offset,
   guint32 bits _U_, guint32 start_bit)
 {
-  start_bit += offset * 8;
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_bsr_aci_bitmap, tvb,
-                        start_bit, 4, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_bsr_delta_tid, tvb,
-                        start_bit + 4, 2, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_bsr_aci_high, tvb,
-                        start_bit + 6, 2, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_bsr_scaling_factor, tvb,
-                        start_bit + 8, 2, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_bsr_queue_size_high, tvb,
-                        start_bit + 10, 8, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_bsr_queue_size_all, tvb,
-                        start_bit + 26, 8, ENC_LITTLE_ENDIAN);
+  proto_tree *bsr_tree = NULL;
+  guint the_bits = (tvb_get_letohl(tvb, offset) >> start_bit) & 0x03FFFFFF;
 
+  /*
+   * We isolated the bits and moved them to the bottom ... so display them
+   */
+  bsr_tree = proto_tree_add_subtree_format(tree, tvb, offset, 4,
+                                ett_ieee80211_buffer_status_report,
+                                NULL, "Buffer Status Report: 0x%08x", the_bits);
+
+  proto_tree_add_uint(bsr_tree, hf_ieee80211_he_bsr_aci_bitmap, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(bsr_tree, hf_ieee80211_he_bsr_delta_tid, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(bsr_tree, hf_ieee80211_he_bsr_aci_high, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(bsr_tree, hf_ieee80211_he_bsr_scaling_factor, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(bsr_tree, hf_ieee80211_he_bsr_queue_size_high, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(bsr_tree, hf_ieee80211_he_bsr_queue_size_all, tvb,
+                        offset, 4, the_bits);
 }
 
 static void
 dissect_a_control_uph(proto_tree *tree, tvbuff_t *tvb, int offset,
   guint32 bits _U_, guint32 start_bit)
 {
-  start_bit += offset * 8;
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_uph_ul_power_headroom, tvb,
-                        start_bit, 5, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_uph_ul_min_transmit_power_flag,
-                        tvb, start_bit + 5, 1, ENC_LITTLE_ENDIAN);
+  proto_tree *uph_tree = NULL;
+  guint the_bits = (tvb_get_letohl(tvb, offset) >> start_bit) & 0x000000FF;
 
+  /*
+   * We isolated the bits and moved them to the bottom ... so display them
+   */
+  uph_tree = proto_tree_add_subtree_format(tree, tvb, offset, 4,
+                                ett_ieee80211_control_uph,
+                                NULL, "UPH Control: 0x%02x", the_bits);
+
+  proto_tree_add_uint(uph_tree, hf_ieee80211_he_uph_ul_power_headroom, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_boolean(uph_tree, hf_ieee80211_he_uph_ul_min_transmit_power_flag,
+                        tvb, offset, 4, the_bits);
+  proto_tree_add_uint(uph_tree, hf_ieee80211_he_uph_reserved,
+                        tvb, offset, 4, the_bits);
 }
 
 static void
 dissect_a_control_bqr(proto_tree *tree, tvbuff_t *tvb, int offset,
   guint32 bits _U_, guint32 start_bit)
 {
-  start_bit += offset * 8;
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_btc_avail_chan, tvb, start_bit,
-                        8, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_btc_reserved, tvb,
-                        start_bit + 8, 2, ENC_LITTLE_ENDIAN);
+  proto_tree *bqr_tree = NULL;
+  guint the_bits = (tvb_get_letohl(tvb, offset) >> start_bit) & 0x000003FF;
+
+  /*
+   * We isolated the bits and moved them to the bottom ... so display them
+   */
+  bqr_tree = proto_tree_add_subtree_format(tree, tvb, offset, 4,
+                                ett_ieee80211_bqr_control,
+                                NULL, "BQR Control: 0x%04x", the_bits);
+
+  proto_tree_add_uint(bqr_tree, hf_ieee80211_he_btc_avail_chan, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(bqr_tree, hf_ieee80211_he_btc_reserved, tvb,
+                        offset, 4, the_bits);
 }
 
 static void
 dissect_a_control_cci(proto_tree *tree, tvbuff_t *tvb, int offset,
   guint32 bits _U_, guint32 start_bit)
 {
-  start_bit += offset * 8;
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_cci_ac_constraint, tvb,
-                        start_bit, 1, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_cci_rdg_more_ppdu, tvb,
-                        start_bit + 1, 1, ENC_LITTLE_ENDIAN);
-  proto_tree_add_bits_item(tree, hf_ieee80211_he_cci_sr_ppdu_indic, tvb,
-                        start_bit + 2, 1, ENC_LITTLE_ENDIAN);
+  proto_tree *cci_tree = NULL;
+  guint the_bits = (tvb_get_letohl(tvb, offset) >> start_bit) & 0x000000FF;
 
+  /*
+   * We isolated the bits and moved them to the bottom ... so display them
+   */
+  cci_tree = proto_tree_add_subtree_format(tree, tvb, offset, 4,
+                                ett_ieee80211_control_cci,
+                                NULL, "Command Control Indication: 0x%02x", the_bits);
+
+  proto_tree_add_boolean(cci_tree, hf_ieee80211_he_cci_ac_constraint, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_boolean(cci_tree, hf_ieee80211_he_cci_rdg_more_ppdu, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_boolean(cci_tree, hf_ieee80211_he_cci_sr_ppdu_indic, tvb,
+                        offset, 4, the_bits);
+  proto_tree_add_uint(cci_tree, hf_ieee80211_he_cci_reserved, tvb,
+                        offset, 4, the_bits);
 }
 
 static void
@@ -14581,8 +15752,9 @@ dissect_ht_control(proto_tree *tree, tvbuff_t *tvb, int offset)
       proto_item *pi = NULL;
       guint8 start_bit_offset = 2;
 
-      a_control_tree = proto_tree_add_subtree(htc_tree, tvb, offset, 4,
-                                ett_htc_he_a_control, NULL, "Aggregate Control");
+      a_control_tree = proto_tree_add_subtree_format(htc_tree, tvb, offset, 4,
+                                ett_htc_he_a_control, NULL,
+                                "Aggregate Control: 0x%0x", htc >> 2);
       while (start_bit_offset < 32) {
         guint8 control_id = (htc >> start_bit_offset) & 0x0F;
         start_bit_offset += 4;
@@ -14892,7 +16064,7 @@ dissect_qos_map_set(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* d
   left = tag_len - 16;
   while (left >= 2) {
     dscp_item = proto_tree_add_item(tree, hf_ieee80211_tag_qos_map_set_dscp_exc,
-                                    tvb, offset, 2, ENC_NA);
+                                    tvb, offset, 2, ENC_LITTLE_ENDIAN);
     dscp_tree = proto_item_add_subtree(dscp_item, ett_qos_map_set_exception);
 
     item = proto_tree_add_item(dscp_tree,
@@ -14995,8 +16167,9 @@ dissect_roaming_consortium(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
   }
 
   if (oi2_len > 0) {
-    proto_tree_add_item(tree, hf_ieee80211_tag_roaming_consortium_oi2,
+    item = proto_tree_add_item(tree, hf_ieee80211_tag_roaming_consortium_oi2,
                         tvb, offset, oi2_len, ENC_NA);
+    add_manuf(item, tvb, offset);
     offset += oi2_len;
   }
 
@@ -15068,7 +16241,7 @@ ieee80211_tag_ssid(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* da
    * assume that it's *valid* ASCII or *valid* UTF-8.)
    *
    * So we really should extract it as an array of ssid_len bytes,
-   * pass those bytes to AirPDcapSetLastSSID(), and:
+   * pass those bytes to Dot11DecryptSetLastSSID(), and:
    *
    *    If the UTF-8 SSID subfield isn't set to 1, put the SSID in
    *    as an ENC_ASCII string;
@@ -15102,7 +16275,7 @@ ieee80211_tag_ssid(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* da
    */
   ssid = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, ssid_len, ENC_ASCII);
   if (ssid_len == (gint)tag_len) {
-    AirPDcapSetLastSSID(&airpdcap_ctx, (CHAR *) ssid, ssid_len);
+    Dot11DecryptSetLastSSID(&dot11decrypt_ctx, (CHAR *) ssid, ssid_len);
   }
   proto_tree_add_item(tree, hf_ieee80211_tag_ssid, tvb, offset, tag_len,
                       ENC_ASCII|ENC_NA);
@@ -15513,12 +16686,12 @@ ieee80211_tag_country_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
 
       proto_tree_add_item(sub_tree, hf_ieee80211_tag_country_info_fnm_fcn,
                           tvb, offset, 1, ENC_LITTLE_ENDIAN);
-      proto_item_append_text(sub_item, ": First Channel Number: %d",
+      proto_item_append_text(sub_item, ": First Channel Number: %u",
                              tvb_get_guint8(tvb, offset));
       offset += 1;
       proto_tree_add_item(sub_tree, hf_ieee80211_tag_country_info_fnm_nc,
                           tvb, offset, 1, ENC_LITTLE_ENDIAN);
-      proto_item_append_text(sub_item, ", Number of Channels: %d",
+      proto_item_append_text(sub_item, ", Number of Channels: %u",
                              tvb_get_guint8(tvb, offset));
       offset += 1;
       proto_tree_add_item(sub_tree, hf_ieee80211_tag_country_info_fnm_mtpl,
@@ -15535,17 +16708,17 @@ ieee80211_tag_country_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
       proto_tree_add_item(sub_tree, hf_ieee80211_tag_country_info_rrc_oei,
                           tvb, offset, 1, ENC_LITTLE_ENDIAN);
       proto_item_append_text(sub_item,
-                             ": Operating Extension Identifier: %d",
+                             ": Operating Extension Identifier: %u",
                              tvb_get_guint8(tvb, offset));
       offset += 1;
       proto_tree_add_item(sub_tree, hf_ieee80211_tag_country_info_rrc_oc,
                           tvb, offset, 1, ENC_LITTLE_ENDIAN);
-      proto_item_append_text(sub_item, ", Operating Class: %d",
+      proto_item_append_text(sub_item, ", Operating Class: %u",
                              tvb_get_guint8(tvb, offset));
       offset += 1;
       proto_tree_add_item(sub_tree, hf_ieee80211_tag_country_info_rrc_cc,
                           tvb, offset, 1, ENC_LITTLE_ENDIAN);
-      proto_item_append_text(sub_item, ", Coverage Class: %d",
+      proto_item_append_text(sub_item, ", Coverage Class: %u",
                              tvb_get_guint8(tvb, offset));
       offset += 1;
     }
@@ -16065,11 +17238,11 @@ ieee80211_tag_power_capability(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
   }
 
   proto_tree_add_item(tree, hf_ieee80211_tag_power_capability_min, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-  proto_item_append_text(field_data->item_tag, " Min: %d", tvb_get_guint8(tvb, offset));
+  proto_item_append_text(field_data->item_tag, " Min: %d", tvb_get_gint8(tvb, offset));
   offset += 1;
 
   proto_tree_add_item(tree, hf_ieee80211_tag_power_capability_max, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-  proto_item_append_text(field_data->item_tag, ", Max :%d", tvb_get_guint8(tvb, offset));
+  proto_item_append_text(field_data->item_tag, ", Max: %d", tvb_get_gint8(tvb, offset));
   return tvb_captured_length(tvb);
 }
 
@@ -17033,6 +18206,9 @@ ieee80211_tag_vendor_specific_ie(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
     case OUI_ZEBRA_EXTREME:
       dissect_vendor_ie_extreme(field_data->item_tag, tree, tvb, offset, tag_vs_len, pinfo);
       break;
+    case OUI_AEROHIVE:
+      dissect_vendor_ie_aerohive(field_data->item_tag, tree, tvb, offset, tag_vs_len, pinfo);
+      break;
     default:
       proto_tree_add_item(tree, hf_ieee80211_tag_vendor_data, tvb, offset, tag_vs_len, ENC_NA);
       break;
@@ -17185,15 +18361,75 @@ static const int *he_phy_b56_to_b71_headers[] = {
   NULL
 };
 
-static const int *he_mcs_map_headers [] = {
-  &hf_he_mcs_max_he_mcs_1_ss,
-  &hf_he_mcs_max_he_mcs_2_ss,
-  &hf_he_mcs_max_he_mcs_3_ss,
-  &hf_he_mcs_max_he_mcs_4_ss,
-  &hf_he_mcs_max_he_mcs_5_ss,
-  &hf_he_mcs_max_he_mcs_6_ss,
-  &hf_he_mcs_max_he_mcs_7_ss,
-  &hf_he_mcs_max_he_mcs_8_ss,
+static const int *he_mcs_map_80_rx_headers [] = {
+  &hf_he_mcs_max_he_mcs_80_rx_1_ss,
+  &hf_he_mcs_max_he_mcs_80_rx_2_ss,
+  &hf_he_mcs_max_he_mcs_80_rx_3_ss,
+  &hf_he_mcs_max_he_mcs_80_rx_4_ss,
+  &hf_he_mcs_max_he_mcs_80_rx_5_ss,
+  &hf_he_mcs_max_he_mcs_80_rx_6_ss,
+  &hf_he_mcs_max_he_mcs_80_rx_7_ss,
+  &hf_he_mcs_max_he_mcs_80_rx_8_ss,
+  NULL
+};
+
+static const int *he_mcs_map_80_tx_headers [] = {
+  &hf_he_mcs_max_he_mcs_80_tx_1_ss,
+  &hf_he_mcs_max_he_mcs_80_tx_2_ss,
+  &hf_he_mcs_max_he_mcs_80_tx_3_ss,
+  &hf_he_mcs_max_he_mcs_80_tx_4_ss,
+  &hf_he_mcs_max_he_mcs_80_tx_5_ss,
+  &hf_he_mcs_max_he_mcs_80_tx_6_ss,
+  &hf_he_mcs_max_he_mcs_80_tx_7_ss,
+  &hf_he_mcs_max_he_mcs_80_tx_8_ss,
+  NULL
+};
+
+static const int *he_mcs_map_80p80_rx_headers [] = {
+  &hf_he_mcs_max_he_mcs_80p80_rx_1_ss,
+  &hf_he_mcs_max_he_mcs_80p80_rx_2_ss,
+  &hf_he_mcs_max_he_mcs_80p80_rx_3_ss,
+  &hf_he_mcs_max_he_mcs_80p80_rx_4_ss,
+  &hf_he_mcs_max_he_mcs_80p80_rx_5_ss,
+  &hf_he_mcs_max_he_mcs_80p80_rx_6_ss,
+  &hf_he_mcs_max_he_mcs_80p80_rx_7_ss,
+  &hf_he_mcs_max_he_mcs_80p80_rx_8_ss,
+  NULL
+};
+
+static const int *he_mcs_map_80p80_tx_headers [] = {
+  &hf_he_mcs_max_he_mcs_80p80_tx_1_ss,
+  &hf_he_mcs_max_he_mcs_80p80_tx_2_ss,
+  &hf_he_mcs_max_he_mcs_80p80_tx_3_ss,
+  &hf_he_mcs_max_he_mcs_80p80_tx_4_ss,
+  &hf_he_mcs_max_he_mcs_80p80_tx_5_ss,
+  &hf_he_mcs_max_he_mcs_80p80_tx_6_ss,
+  &hf_he_mcs_max_he_mcs_80p80_tx_7_ss,
+  &hf_he_mcs_max_he_mcs_80p80_tx_8_ss,
+  NULL
+};
+
+static const int *he_mcs_map_160_rx_headers [] = {
+  &hf_he_mcs_max_he_mcs_160_rx_1_ss,
+  &hf_he_mcs_max_he_mcs_160_rx_2_ss,
+  &hf_he_mcs_max_he_mcs_160_rx_3_ss,
+  &hf_he_mcs_max_he_mcs_160_rx_4_ss,
+  &hf_he_mcs_max_he_mcs_160_rx_5_ss,
+  &hf_he_mcs_max_he_mcs_160_rx_6_ss,
+  &hf_he_mcs_max_he_mcs_160_rx_7_ss,
+  &hf_he_mcs_max_he_mcs_160_rx_8_ss,
+  NULL
+};
+
+static const int *he_mcs_map_160_tx_headers [] = {
+  &hf_he_mcs_max_he_mcs_160_tx_1_ss,
+  &hf_he_mcs_max_he_mcs_160_tx_2_ss,
+  &hf_he_mcs_max_he_mcs_160_tx_3_ss,
+  &hf_he_mcs_max_he_mcs_160_tx_4_ss,
+  &hf_he_mcs_max_he_mcs_160_tx_5_ss,
+  &hf_he_mcs_max_he_mcs_160_tx_6_ss,
+  &hf_he_mcs_max_he_mcs_160_tx_7_ss,
+  &hf_he_mcs_max_he_mcs_160_tx_8_ss,
   NULL
 };
 
@@ -17294,12 +18530,12 @@ dissect_he_capabilities(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
                         "Rx and Tx MCS Maps <= 80 MHz");
   proto_tree_add_bitmask_with_flags(rx_tx_he_mcs_map_80, tvb, offset,
                         hf_he_rx_he_mcs_map_lte_80,
-                        ett_he_rx_mcs_map_lte_80, he_mcs_map_headers,
+                        ett_he_rx_mcs_map_lte_80, he_mcs_map_80_rx_headers,
                         ENC_LITTLE_ENDIAN, BMT_NO_APPEND);
   offset += 2;
   proto_tree_add_bitmask_with_flags(rx_tx_he_mcs_map_80, tvb, offset,
                         hf_he_tx_he_mcs_map_lte_80,
-                        ett_he_tx_mcs_map_lte_80, he_mcs_map_headers,
+                        ett_he_tx_mcs_map_lte_80, he_mcs_map_80_tx_headers,
                         ENC_LITTLE_ENDIAN, BMT_NO_APPEND);
   offset += 2;
 
@@ -17309,12 +18545,12 @@ dissect_he_capabilities(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
                         "Rx and Tx MCS Maps 160 MHz");
     proto_tree_add_bitmask_with_flags(rx_tx_he_mcs_map_160, tvb, offset,
                         hf_he_rx_he_mcs_map_160,
-                        ett_he_rx_mcs_map_160, he_mcs_map_headers,
+                        ett_he_rx_mcs_map_160, he_mcs_map_160_rx_headers,
                         ENC_LITTLE_ENDIAN, BMT_NO_APPEND);
     offset += 2;
     proto_tree_add_bitmask_with_flags(rx_tx_he_mcs_map_160, tvb, offset,
                         hf_he_tx_he_mcs_map_160,
-                        ett_he_tx_mcs_map_160, he_mcs_map_headers,
+                        ett_he_tx_mcs_map_160, he_mcs_map_160_tx_headers,
                         ENC_LITTLE_ENDIAN, BMT_NO_APPEND);
     offset += 2;
   }
@@ -17325,12 +18561,12 @@ dissect_he_capabilities(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
                         "Rx and Tx MCS Maps 80+80 MHz");
     proto_tree_add_bitmask_with_flags(rx_tx_he_mcs_map_80_80, tvb, offset,
                         hf_he_rx_he_mcs_map_80_80,
-                        ett_he_rx_mcs_map_80_80, he_mcs_map_headers,
+                        ett_he_rx_mcs_map_80_80, he_mcs_map_80p80_rx_headers,
                         ENC_LITTLE_ENDIAN, BMT_NO_APPEND);
     offset += 2;
     proto_tree_add_bitmask_with_flags(rx_tx_he_mcs_map_80_80, tvb, offset,
                         hf_he_tx_he_mcs_map_80_80,
-                        ett_he_tx_mcs_map_80_80, he_mcs_map_headers,
+                        ett_he_tx_mcs_map_80_80, he_mcs_map_80p80_tx_headers,
                         ENC_LITTLE_ENDIAN, BMT_NO_APPEND);
     offset += 2;
   }
@@ -17351,8 +18587,11 @@ dissect_he_capabilities(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
     proto_tree_add_item(ppe_tree, hf_he_ppe_thresholds_ru_index_bitmask, tvb,
                         offset, 1, ENC_NA);
 
-    /* Now, for each of the nss values, add a sub-tree with its thresholds */
-    while (nss_index < nss_count) {
+    /*
+     * Now, for each of the nss values, add a sub-tree with its thresholds.
+     * The actual count is one more than the number in the first three bits.
+     */
+    while (nss_index < nss_count + 1) {
       int start_offset = 0;
       proto_tree *nss_tree = NULL;
       proto_item *nssti = NULL;
@@ -17383,9 +18622,9 @@ dissect_he_capabilities(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
           } else { /* We need two adjacent bytes */
             the_bits = (tvb_get_guint8(tvb, offset) >> bit_offset);
             offset++;
-            the_bits = the_bits >> bit_offset |
+            the_bits = the_bits |
                         ((tvb_get_guint8(tvb, offset) &
-                                ((1 << bits_needed) - 1)) << (6 - bits_needed));
+                                ((1 << bits_needed) - 1)) << bits_avail);
           }
           /*
            * Now we have two three bit fields, use them.
@@ -18190,6 +19429,7 @@ ieee80211_tag_dmg_capabilities(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
   int tag_len = tvb_reported_length(tvb);
   ieee80211_tagged_field_data_t* field_data = (ieee80211_tagged_field_data_t*)data;
   int offset = 0;
+
   static const int * ieee80211_tag_dmg_cap1[] = {
     &hf_ieee80211_tag_reverse_direction,
     &hf_ieee80211_tag_hlts,
@@ -18240,11 +19480,24 @@ ieee80211_tag_dmg_capabilities(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
     NULL
   };
 
-  if (tag_len != 17)
+  static const int * ieee80211_tag_dmg_cap5[] = {
+    &hf_ieee80211_tag_ext_sc_mcs_max_tx,
+    &hf_ieee80211_tag_ext_sc_mcs_tx_code_7_8,
+    &hf_ieee80211_tag_ext_sc_mcs_max_rx,
+    &hf_ieee80211_tag_ext_sc_mcs_rx_code_7_8,
+    NULL
+  };
+
+  /*
+   * Plenty of devices still do not conform to the older version of this
+   * field. So, it must be at least 17 bytes in length.
+   */
+  if (tag_len < 17)
   {
-    expert_add_info_format(pinfo, field_data->item_tag_length, &ei_ieee80211_tag_length, "Tag Length %u wrong, must be = 17", tag_len);
+    expert_add_info_format(pinfo, field_data->item_tag_length, &ei_ieee80211_tag_length, "Tag Length %u wrong, must contain at least 17 bytes", tag_len);
     return tvb_captured_length(tvb);
   }
+
   proto_tree_add_item(tree, hf_ieee80211_tag_dmg_capa_sta_addr, tvb, offset, 6, ENC_NA);
   offset += 6;
   proto_tree_add_item(tree, hf_ieee80211_tag_dmg_capa_aid, tvb, offset, 1, ENC_NA);
@@ -18256,6 +19509,27 @@ ieee80211_tag_dmg_capabilities(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
   proto_tree_add_bitmask_list(tree, tvb, offset, 2, ieee80211_tag_dmg_cap3, ENC_LITTLE_ENDIAN);
   offset += 2;
   proto_tree_add_bitmask_list(tree, tvb, offset, 2, ieee80211_tag_dmg_cap4, ENC_LITTLE_ENDIAN);
+  offset += 2;
+
+  /*
+   * There are many captures out there that do not conform to the 2016
+   * version, so give them a malformed IE message now after we have dissected
+   * the above
+   */
+  if (tag_len != 22)
+  {
+    expert_add_info_format(pinfo, field_data->item_tag_length, &ei_ieee80211_tag_length, "Tag Length %u does not conform to IEEE802.11-2016, should contain 22 bytes", tag_len);
+    return tvb_captured_length(tvb);
+  }
+
+  proto_tree_add_item(tree, hf_ieee80211_tag_sta_beam_track, tvb, offset, 2, ENC_NA);
+  offset += 2;
+  proto_tree_add_bitmask_list(tree, tvb, offset, 1, ieee80211_tag_dmg_cap5, ENC_LITTLE_ENDIAN);
+  offset += 1;
+  proto_tree_add_item(tree, hf_ieee80211_tag_max_basic_sf_amsdu, tvb, offset, 1, ENC_NA);
+  offset += 1;
+  proto_tree_add_item(tree, hf_ieee80211_tag_max_short_sf_amsdu, tvb, offset, 1, ENC_NA);
+
   return tvb_captured_length(tvb);
 }
 
@@ -19168,6 +20442,13 @@ static const int *block_ack_control_headers[] = {
   NULL
 };
 
+static const int *multi_sta_aid_tid_headers[] = {
+  &hf_ieee80211_block_ack_multi_sta_aid11,
+  &hf_ieee80211_block_ack_multi_sta_ack_type,
+  &hf_ieee80211_block_ack_multi_sta_tid,
+ NULL
+};
+
 /*
  * These bits are shown in reverse order in the spec.
  */
@@ -19192,7 +20473,7 @@ static const value_string block_ack_type_vals[] = {
 
 static int
 dissect_ieee80211_block_ack_details(tvbuff_t *tvb, packet_info *pinfo _U_,
-  proto_tree *tree, int offset, gboolean isDMG, gboolean is_req)
+  proto_tree *tree, int offset, gboolean isDMG, gboolean is_req, gboolean has_fcs)
 {
   proto_item     *pi;
   guint16         ba_control;
@@ -19206,6 +20487,9 @@ dissect_ieee80211_block_ack_details(tvbuff_t *tvb, packet_info *pinfo _U_,
   int             f;
   proto_item     *ba_bitmap_item;
   proto_tree     *ba_bitmap_tree;
+  guint16         aid_tid;
+  proto_tree     *ba_multi_sta_tree;
+  int             ba_start = offset;
 
   ba_control = tvb_get_letohs(tvb, offset);
   block_ack_type = (ba_control & 0x001E) >> 1;
@@ -19244,13 +20528,12 @@ dissect_ieee80211_block_ack_details(tvbuff_t *tvb, packet_info *pinfo _U_,
      * depending on the values of the fragment number subfield in the
      * SSC! All values other that 0 and 2 in bits B1 & B2 are reserved.
      */
-    frag_num = tvb_get_guint8(tvb, offset) & 0x0F;
+    ssn = tvb_get_letohs(tvb, offset);
+    frag_num = ssn & 0x0F;
+    ssn >>= 4;
     offset += add_ff_block_ack_ssc(ba_tree, tvb, pinfo, offset);
 
     if (!is_req) {
-      ssn = tvb_get_letohs(tvb, offset);
-      ssn >>= 4;
-
       if ((frag_num & 0x06) == 0) {
         bmap = tvb_get_letoh64(tvb, offset);
         ba_bitmap_item = proto_tree_add_item(ba_tree,
@@ -19377,15 +20660,54 @@ dissect_ieee80211_block_ack_details(tvbuff_t *tvb, packet_info *pinfo _U_,
       offset += 8;
     }
     break;
+
+  case MULTI_STA_BLOCK_ACK:
+    while (tvb_reported_length_remaining(tvb, offset) > (has_fcs ? 4 : 0)) {
+        int start = offset;
+        proto_item *msta_ti = NULL;
+        aid_tid = tvb_get_letohs(tvb, offset);
+        ba_multi_sta_tree = proto_tree_add_subtree_format(ba_tree, tvb, offset, -1,
+                                ett_multi_sta_block_ack, &msta_ti,
+                                "Per AID TID Info: 0x%0x", aid_tid & 0x07ff);
+        proto_tree_add_bitmask_with_flags(ba_multi_sta_tree, tvb, offset,
+                        hf_ieee80211_block_ack_multi_sta_aid_tid,
+                        ett_block_ack_request_multi_sta_aid_tid,
+                        multi_sta_aid_tid_headers,
+                        ENC_LITTLE_ENDIAN, BMT_NO_APPEND);
+        offset += 2;
+
+        if ((aid_tid & 0x07ff) != 2045) {
+          if (((aid_tid & 0x0800) == 0) && (aid_tid & 0xf000) <= 7) {
+            guint8 bitmap_size;
+            frag_num = tvb_get_guint8(tvb, offset);
+            offset += add_ff_block_ack_ssc(ba_multi_sta_tree, tvb, pinfo, offset);
+            bitmap_size = ((frag_num + 2) & 0x6) >> 1;  /* Turn into an exponent */
+            bitmap_size = 4 << bitmap_size;  /* It goes 4, 8, 16, 32 */
+            proto_tree_add_item(ba_multi_sta_tree, hf_ieee80211_block_ack_bitmap, tvb,
+                        offset, bitmap_size, ENC_NA);
+            offset += bitmap_size;
+          }
+        } else {
+          offset += add_ff_block_ack_ssc(ba_multi_sta_tree, tvb, pinfo, offset);
+          proto_tree_add_item(ba_multi_sta_tree, hf_ieee80211_block_ack_multi_sta_reserved,
+                                tvb, offset, 2, ENC_LITTLE_ENDIAN);
+          offset += 2;
+          proto_tree_add_item(ba_multi_sta_tree, hf_ieee80211_block_ack_multi_sta_ra,
+                                tvb, offset, 6, ENC_NA);
+          offset += 6;
+        }
+        proto_item_set_len(msta_ti, offset - start);
+    }
+    break;
   }
-  proto_item_set_len(pi, offset);
+  proto_item_set_len(pi, offset - ba_start);
 
   return offset;
 }
 
-static void
+static int
 dissect_ieee80211_block_ack(tvbuff_t *tvb, packet_info *pinfo _U_,
-  proto_tree *tree, int offset, gboolean isDMG, gboolean is_req)
+  proto_tree *tree, int offset, gboolean isDMG, gboolean is_req, gboolean has_fcs)
 {
   const gchar *ether_name = tvb_get_ether_name(tvb, offset);
   proto_item     *hidden_item;
@@ -19402,7 +20724,7 @@ dissect_ieee80211_block_ack(tvbuff_t *tvb, packet_info *pinfo _U_,
   PROTO_ITEM_SET_HIDDEN(hidden_item);
   offset += 6;
 
-  dissect_ieee80211_block_ack_details(tvb, pinfo, tree, offset, isDMG, is_req);
+  return dissect_ieee80211_block_ack_details(tvb, pinfo, tree, offset, isDMG, is_req, has_fcs);
 }
 
 /*
@@ -19419,7 +20741,7 @@ dissect_ieee80211_block_ack(tvbuff_t *tvb, packet_info *pinfo _U_,
 #define TRIGGER_TYPE_BQRP       6
 #define TRIGGER_TYPE_NFRP       7
 
-static const value_string trigger_type_vals[] = {
+static const val64_string trigger_type_vals[] = {
   { 0, "Basic" },
   { 1, "Beamforming Report Poll (BRP)" },
   { 2, "MU-BAR" },
@@ -19431,7 +20753,7 @@ static const value_string trigger_type_vals[] = {
   { 0, NULL }
 };
 
-static const value_string bw_subfield_vals[] = {
+static const val64_string bw_subfield_vals[] = {
   { 0, "20 MHz" },
   { 1, "40 MHz" },
   { 2, "80 MHz" },
@@ -19439,7 +20761,7 @@ static const value_string bw_subfield_vals[] = {
   { 0, NULL }
 };
 
-static const value_string gi_and_ltf_type_subfield_vals[] = {
+static const val64_string gi_and_ltf_type_subfield_vals[] = {
   { 0, "1x LTF + 1.6 us GI" },
   { 1, "2x LTF + 1.6 us GI" },
   { 2, "4x LTF + 3.2 us GI" },
@@ -19593,7 +20915,7 @@ add_mu_bar_trigger_dependent_user_info(proto_tree *tree, tvbuff_t *tvb,
    * a compressed block ack or a multi-tid block ack request.
    */
   offset = dissect_ieee80211_block_ack_details(tvb, pinfo, tree, offset,
-                        FALSE, TRUE);
+                        FALSE, TRUE, FALSE);
 
   *frame_len += offset - start_offset;
 
@@ -19741,7 +21063,7 @@ dissect_ieee80211_he_trigger(tvbuff_t *tvb, packet_info *pinfo _U_,
 
   trigger_type = tvb_get_guint8(tvb, offset) & 0x0F;
   col_append_fstr(pinfo->cinfo, COL_INFO, " %s",
-                val_to_str(trigger_type, trigger_type_vals, "Reserved"));
+                val64_to_str(trigger_type, trigger_type_vals, "Reserved"));
   /*
    * Deal with the common Info and then any user info after that.
    */
@@ -19751,7 +21073,7 @@ dissect_ieee80211_he_trigger(tvbuff_t *tvb, packet_info *pinfo _U_,
   /*
    * Now the User Info field.
    */
-  offset += add_he_trigger_user_info(tree, tvb, offset, pinfo,
+  /*offset +=*/ add_he_trigger_user_info(tree, tvb, offset, pinfo,
                         trigger_type, &length);
 
   /*
@@ -19769,13 +21091,13 @@ dissect_ieee80211_he_trigger(tvbuff_t *tvb, packet_info *pinfo _U_,
 
 static const true_false_string he_ndp_annc_he_subfield_vals = {
   "HE NDP Announcement frame",
-  "VHT NDP Anncouncement frame"
+  "VHT NDP Announcement frame"
 };
 
 static const int *vht_ndp_headers[] = {
-  &hf_ieee80211_vht_ndp_annc_token_number,
-  &hf_ieee80211_vht_ndp_annc_he_subfield,
   &hf_ieee80211_vht_ndp_annc_token_reserved,
+  &hf_ieee80211_vht_ndp_annc_he_subfield,
+  &hf_ieee80211_vht_ndp_annc_token_number,
   NULL
 };
 
@@ -19785,8 +21107,10 @@ dissect_ieee80211_vht_ndp_annc(tvbuff_t *tvb, packet_info *pinfo _U_,
 {
   guint16          sta_info;
   guint8           len_fcs = 0;
-  proto_tree      *sta_info_tree;
-  proto_item      *sta_info_item;
+  proto_tree      *sta_list;
+  proto_item      *sta_info_item, *pi;
+  int              saved_offset = 0;
+  int              sta_index = 0;
 
   proto_tree_add_bitmask_with_flags(tree, tvb, offset,
                         hf_ieee80211_vht_ndp_annc_token, ett_vht_ndp_annc,
@@ -19797,27 +21121,32 @@ dissect_ieee80211_vht_ndp_annc(tvbuff_t *tvb, packet_info *pinfo _U_,
     len_fcs = 4;
   }
 
+  sta_list = proto_tree_add_subtree(tree, tvb, offset, -1,
+                        ett_vht_ndp_annc_sta_list, &pi, "STA list");
+  saved_offset = offset;
+
   while (tvb_reported_length_remaining(tvb, offset) > len_fcs) {
-    sta_info_item = proto_tree_add_item(tree, hf_ieee80211_vht_ndp_annc_sta_info,
-                                        tvb, offset, 2, ENC_LITTLE_ENDIAN);
-    sta_info_tree = proto_item_add_subtree(sta_info_item, ett_vht_ndp_annc_sta_info_tree);
-    proto_tree_add_item(sta_info_tree, hf_ieee80211_vht_ndp_annc_sta_info_aid12,
+    sta_info_item = proto_tree_add_subtree_format(sta_list, tvb, offset, 2,
+                        ett_vht_ndp_annc_sta_info_tree, NULL, "STA %d",
+                        sta_index++);
+    proto_tree_add_item(sta_info_item, hf_ieee80211_vht_ndp_annc_sta_info_aid12,
                         tvb, offset, 2, ENC_LITTLE_ENDIAN);
-    proto_tree_add_item(sta_info_tree, hf_ieee80211_vht_ndp_annc_sta_info_feedback_type,
+    proto_tree_add_item(sta_info_item, hf_ieee80211_vht_ndp_annc_sta_info_feedback_type,
                         tvb, offset, 2, ENC_LITTLE_ENDIAN);
 
     sta_info = tvb_get_letohs(tvb, offset);
 
     if (sta_info & 0x1000)
-       proto_tree_add_uint(sta_info_tree,
+       proto_tree_add_uint(sta_info_item,
                            hf_ieee80211_vht_ndp_annc_sta_info_nc_index,
                            tvb, offset, 2, sta_info);
     else
-       proto_tree_add_item(sta_info_tree, hf_ieee80211_vht_ndp_annc_sta_info_reserved,
+       proto_tree_add_item(sta_info_item, hf_ieee80211_vht_ndp_annc_sta_info_reserved,
                            tvb, offset, 2, ENC_LITTLE_ENDIAN);
     offset += 2;
   }
 
+  proto_item_set_len(pi, offset - saved_offset);
   return offset;
 }
 
@@ -19833,9 +21162,9 @@ partial_bw_info_base_custom(gchar *result, guint32 partial_bw)
 }
 
 static const int *he_ndp_headers[] = {
-  &hf_he_ndp_sounding_dialog_token_number,
-  &hf_he_ndp_annc_he_subfield,
   &hf_he_ndp_annc_reserved,
+  &hf_he_ndp_annc_he_subfield,
+  &hf_he_ndp_sounding_dialog_token_number,
   NULL
 };
 
@@ -20017,7 +21346,7 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
   tvbuff_t   *next_tvb = NULL;
   wlan_hdr_t *whdr;
 
-  AIRPDCAP_KEY_ITEM  used_key;
+  DOT11DECRYPT_KEY_ITEM  used_key;
 
   p_add_proto_data(wmem_file_scope(), pinfo, proto_wlan, IS_DMG_KEY, GINT_TO_POINTER(isDMG));
 
@@ -20171,7 +21500,48 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
           hdr_len += meshctl_len;
         }
       }
+    } else if ((option_flags & IEEE80211_COMMON_OPT_NORMAL_QOS) && !DATA_FRAME_IS_QOS(frame_type_subtype)) {
+
+      if (HAS_HT_CONTROL(FCF_FLAGS(fcf))) {
+        /*
+         * QoS data frames with the Order bit set have an HT Control field;
+         * see 8.2.4.1.10 "Order field".  If they're not HT frames, they
+         * should never have the Order bit set.
+         */
+        hdr_len += 4;
+        htc_len = 4;
+      }
+
+      /*
+       * For locally originated mesh frames, the QoS header may be added by the
+       * hardware, and no present in wireshark captures.  This poses a problem
+       * as the QoS header indicates the presence of the mesh control header.
+       *
+       * Instead of QoS, we use a few heuristics to determine the presence of
+       * the mesh control header, which is tricky because it can have a
+       * variable length.
+       *
+       * Assume minimal length, and then correct if wrong.
+       */
+      meshctl_len = find_mesh_control_length(0);
+      if (tvb_bytes_exist(tvb, hdr_len, meshctl_len)) {
+        meshoff = hdr_len;
+        mesh_flags = tvb_get_guint8(tvb, meshoff);
+        /* now find correct length */
+        meshctl_len = find_mesh_control_length(mesh_flags);
+        /* ... and try to read two bytes of next header */
+        if (tvb_bytes_exist(tvb, hdr_len, meshctl_len + sizeof(guint16))) {
+          guint16 next_header = tvb_get_letohs(tvb, meshoff + meshctl_len);
+          if (has_mesh_control_local(fcf, mesh_flags, next_header)) {
+            /* Yes, add the length of that in as well. */
+            hdr_len += meshctl_len;
+            break;
+          }
+        }
+      }
     }
+    /* failed to find a mesh header */
+    meshctl_len = 0;
     break;
 
   case EXTENSION_FRAME:
@@ -20471,7 +21841,7 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
         case CTRL_VHT_NDP_ANNC:
           set_src_addr_cols(pinfo, tvb, offset, "TA");
 
-          dissect_ieee80211_vht_he_ndp_annc(tvb, pinfo, tree, offset, has_fcs);
+          dissect_ieee80211_vht_he_ndp_annc(tvb, pinfo, hdr_tree, offset, has_fcs);
           break;
 
         case CTRL_GRANT_ACK:
@@ -20507,13 +21877,13 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
         case CTRL_BLOCK_ACK_REQ:
           set_src_addr_cols(pinfo, tvb, offset, "TA");
 
-          dissect_ieee80211_block_ack(tvb, pinfo, hdr_tree, offset, isDMG, TRUE);
+          offset = dissect_ieee80211_block_ack(tvb, pinfo, hdr_tree, offset, isDMG, TRUE, has_fcs);
           break;
 
         case CTRL_BLOCK_ACK:
           set_src_addr_cols(pinfo, tvb, offset, "TA");
 
-          dissect_ieee80211_block_ack(tvb, pinfo, hdr_tree, offset, isDMG, FALSE);
+          offset = dissect_ieee80211_block_ack(tvb, pinfo, hdr_tree, offset, isDMG, FALSE, has_fcs);
           break;
       }
 /*
@@ -20889,32 +22259,40 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
             proto_tree_add_item(qos_tree, hf_ieee80211_qos_amsdu_present, tvb, qosoff, 2, ENC_LITTLE_ENDIAN);
             is_amsdu = QOS_AMSDU_PRESENT(qos_control);
           }
-          if (qos_eosp) {
-            /* queue size */
-            qos_ti = proto_tree_add_item(qos_tree, hf_ieee80211_qos_queue_size, tvb, qosoff, 2, ENC_LITTLE_ENDIAN);
-            switch (qos_field_content) {
-            case 0:
-              proto_item_append_text(qos_ti, " (no buffered traffic in the queue)");
-              break;
+          /*
+           * Only QoS Data, Qos CF-ACK and NULL frames To-DS have a Queue Size
+           * field.
+           */
+          if ((DATA_FRAME_IS_NULL(frame_type_subtype) ||
+               (frame_type_subtype & 0x7) == 0 ||
+               DATA_FRAME_IS_CF_ACK(frame_type_subtype))) {
+            if (qos_eosp) {
+              /* queue size */
+              qos_ti = proto_tree_add_item(qos_tree, hf_ieee80211_qos_queue_size, tvb, qosoff, 2, ENC_LITTLE_ENDIAN);
+              switch (qos_field_content) {
+              case 0:
+                proto_item_append_text(qos_ti, " (no buffered traffic in the queue)");
+                break;
 
-            default:
-              proto_item_append_text(qos_ti, " (%u bytes)", qos_field_content*256);
-              break;
+              default:
+                proto_item_append_text(qos_ti, " (%u bytes)", qos_field_content*256);
+                break;
 
-            case 254:
-              proto_item_append_text(qos_ti, " (more than 64768 octets)");
-              break;
+              case 254:
+                proto_item_append_text(qos_ti, " (more than 64768 octets)");
+                break;
 
-            case 255:
-              proto_item_append_text(qos_ti, " (unspecified or unknown)");
-              break;
-            }
-          } else {
-            /* txop duration requested */
-            qos_ti = proto_tree_add_item(qos_tree, hf_ieee80211_qos_txop_dur_req,
+              case 255:
+                proto_item_append_text(qos_ti, " (unspecified or unknown)");
+                break;
+              }
+            } else {
+              /* txop duration requested */
+              qos_ti = proto_tree_add_item(qos_tree, hf_ieee80211_qos_txop_dur_req,
                                    tvb, qosoff, 2, ENC_LITTLE_ENDIAN);
-            if (qos_field_content == 0) {
-              proto_item_append_text(qos_ti, " (no TXOP requested)");
+              if (qos_field_content == 0) {
+                proto_item_append_text(qos_ti, " (no TXOP requested)");
+              }
             }
           }
         }
@@ -20924,20 +22302,21 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
           dissect_ht_control(hdr_tree, tvb, ohdr_len - 4);
         }
 
-        if (meshctl_len != 0) {
-          proto_item *msh_fields;
-          proto_tree *msh_tree;
-
-          msh_fields = proto_tree_add_item(hdr_tree, hf_ieee80211_mesh_control_field, tvb, meshoff, meshctl_len, ENC_NA);
-          msh_tree = proto_item_add_subtree(msh_fields, ett_msh_control);
-          add_ff_mesh_control(msh_tree, tvb, pinfo, meshoff);
-        }
-
       } /* end of qos control field */
+
+      if (meshctl_len != 0) {
+        proto_item *msh_fields;
+        proto_tree *msh_tree;
+
+        msh_fields = proto_tree_add_item(hdr_tree, hf_ieee80211_mesh_control_field, tvb, meshoff, meshctl_len, ENC_NA);
+        msh_tree = proto_item_add_subtree(msh_fields, ett_msh_control);
+        add_ff_mesh_control(msh_tree, tvb, pinfo, meshoff);
+      }
+
       if (enable_decryption && !pinfo->fd->flags.visited) {
         const guint8 *enc_data = tvb_get_ptr(tvb, 0, hdr_len+reported_len);
         /* The processing will take care of 4-way handshake sessions for WPA and WPA2 decryption */
-        AirPDcapPacketProcess(&airpdcap_ctx, enc_data, hdr_len, hdr_len+reported_len, NULL, 0, NULL, TRUE);
+        Dot11DecryptPacketProcess(&dot11decrypt_ctx, enc_data, hdr_len, hdr_len+reported_len, NULL, 0, NULL, TRUE);
 
       }
       /*
@@ -21024,9 +22403,9 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
     guint32     iv;
     guint8      key, keybyte;
 
-#define PROTECTION_ALG_WEP  AIRPDCAP_KEY_TYPE_WEP
-#define PROTECTION_ALG_TKIP  AIRPDCAP_KEY_TYPE_TKIP
-#define PROTECTION_ALG_CCMP  AIRPDCAP_KEY_TYPE_CCMP
+#define PROTECTION_ALG_WEP  DOT11DECRYPT_KEY_TYPE_WEP
+#define PROTECTION_ALG_TKIP  DOT11DECRYPT_KEY_TYPE_TKIP
+#define PROTECTION_ALG_CCMP  DOT11DECRYPT_KEY_TYPE_CCMP
 #define PROTECTION_ALG_RSNA  PROTECTION_ALG_CCMP | PROTECTION_ALG_TKIP
     guint8 algorithm=G_MAXUINT8;
 #define IS_TKIP(tvb, hdr_len)  (tvb_get_guint8(tvb, hdr_len + 1) == \
@@ -21109,16 +22488,16 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
           can_decrypt   = TRUE;
 
           /* Add Key information to packet */
-          bytes_to_hexstr(out_buff, used_key.KeyData.Wpa.Ptk+32, AIRPDCAP_TK_LEN); /* TK is stored in PTK at offset 32 bytes and 16 bytes long */
-          out_buff[2*AIRPDCAP_TK_LEN] = '\0';
+          bytes_to_hexstr(out_buff, used_key.KeyData.Wpa.Ptk+32, DOT11DECRYPT_TK_LEN); /* TK is stored in PTK at offset 32 bytes and 16 bytes long */
+          out_buff[2*DOT11DECRYPT_TK_LEN] = '\0';
 
           if (key == 0) { /* encrypted with pairwise key */
             ti = proto_tree_add_string(wep_tree, hf_ieee80211_fc_analysis_tk, tvb, 0, 0, out_buff);
             PROTO_ITEM_SET_GENERATED(ti);
 
             /* Also add the PMK used to to decrypt the packet. (PMK==PSK) */
-            bytes_to_hexstr(out_buff, used_key.KeyData.Wpa.Psk, AIRPDCAP_WPA_PSK_LEN); /* 32 bytes */
-            out_buff[2*AIRPDCAP_WPA_PSK_LEN] = '\0';
+            bytes_to_hexstr(out_buff, used_key.KeyData.Wpa.Psk, DOT11DECRYPT_WPA_PSK_LEN); /* 32 bytes */
+            out_buff[2*DOT11DECRYPT_WPA_PSK_LEN] = '\0';
             ti = proto_tree_add_string(wep_tree, hf_ieee80211_fc_analysis_pmk, tvb, 0, 0, out_buff);
             PROTO_ITEM_SET_GENERATED(ti);
 
@@ -21402,13 +22781,13 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
           i += 1;
 
           proto_tree_add_item(subframe_tree, hf_ieee80211_addr_da, next_tvb, msdu_offset, 6, ENC_NA);
-          resolve_name = tvb_get_ether_name(tvb, msdu_offset);
-          hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_da_resolved, tvb, msdu_offset, 6,
+          resolve_name = tvb_get_ether_name(next_tvb, msdu_offset);
+          hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_da_resolved, next_tvb, msdu_offset, 6,
             resolve_name);
           PROTO_ITEM_SET_HIDDEN(hidden_item);
           proto_tree_add_item(subframe_tree, hf_ieee80211_addr_sa, next_tvb, msdu_offset+6, 6, ENC_NA);
-          resolve_name = tvb_get_ether_name(tvb, msdu_offset+6);
-          hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_sa_resolved, tvb, msdu_offset+6, 6,
+          resolve_name = tvb_get_ether_name(next_tvb, msdu_offset+6);
+          hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_sa_resolved, next_tvb, msdu_offset+6, 6,
             resolve_name);
           PROTO_ITEM_SET_HIDDEN(hidden_item);
           proto_tree_add_item(subframe_tree, hf_ieee80211_amsdu_length, next_tvb, msdu_offset+12, 2, ENC_BIG_ENDIAN);
@@ -21455,6 +22834,11 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
            packet starts with 0x00 0x00 and, if so, treat it as an OLPC
            frame, or check the packet starts with the repetition of the
            sequence control field and, if so, treat it as an Atheros frame. */
+      heur_dtbl_entry_t  *hdtbl_entry;
+      if (dissector_try_heuristic(heur_subdissector_list, next_tvb, pinfo, tree, &hdtbl_entry, NULL)) {
+        pinfo->fragmented = save_fragmented;
+        goto end_of_wlan; /* heuristics dissector handled it. */
+      }
       encap_type = ENCAP_802_2;
       if (tvb_bytes_exist(next_tvb, 0, 2)) {
         octet1 = tvb_get_guint8(next_tvb, 0);
@@ -21898,12 +23282,12 @@ dissect_wlan_rsna_eapol_wpa_or_rsn_key(tvbuff_t *tvb, packet_info *pinfo, proto_
 
 /* It returns the algorithm used for decryption and the header and trailer lengths. */
 static tvbuff_t *
-try_decrypt(tvbuff_t *tvb, packet_info *pinfo, guint offset, guint len, guint8 *algorithm, guint32 *sec_header, guint32 *sec_trailer, PAIRPDCAP_KEY_ITEM used_key)
+try_decrypt(tvbuff_t *tvb, packet_info *pinfo, guint offset, guint len, guint8 *algorithm, guint32 *sec_header, guint32 *sec_trailer, PDOT11DECRYPT_KEY_ITEM used_key)
 {
   const guint8      *enc_data;
   tvbuff_t          *decr_tvb = NULL;
   guint32            dec_caplen;
-  guchar             dec_data[AIRPDCAP_MAX_CAPLEN];
+  guchar             dec_data[DOT11DECRYPT_MAX_CAPLEN];
 
   if (!enable_decryption)
     return NULL;
@@ -21911,24 +23295,24 @@ try_decrypt(tvbuff_t *tvb, packet_info *pinfo, guint offset, guint len, guint8 *
   /* get the entire packet                                  */
   enc_data = tvb_get_ptr(tvb, 0, len+offset);
 
-  /*  process packet with AirPDcap                              */
-  if (AirPDcapPacketProcess(&airpdcap_ctx, enc_data, offset, offset+len, dec_data, &dec_caplen,
-                            used_key, FALSE)==AIRPDCAP_RET_SUCCESS)
+  /*  process packet with Dot11Decrypt                              */
+  if (Dot11DecryptPacketProcess(&dot11decrypt_ctx, enc_data, offset, offset+len, dec_data, &dec_caplen,
+                            used_key, FALSE)==DOT11DECRYPT_RET_SUCCESS)
   {
     guint8 *tmp;
     *algorithm=used_key->KeyType;
     switch (*algorithm) {
-      case AIRPDCAP_KEY_TYPE_WEP:
-        *sec_header=AIRPDCAP_WEP_HEADER;
-        *sec_trailer=AIRPDCAP_WEP_TRAILER;
+      case DOT11DECRYPT_KEY_TYPE_WEP:
+        *sec_header=DOT11DECRYPT_WEP_HEADER;
+        *sec_trailer=DOT11DECRYPT_WEP_TRAILER;
         break;
-      case AIRPDCAP_KEY_TYPE_CCMP:
-        *sec_header=AIRPDCAP_RSNA_HEADER;
-        *sec_trailer=AIRPDCAP_CCMP_TRAILER;
+      case DOT11DECRYPT_KEY_TYPE_CCMP:
+        *sec_header=DOT11DECRYPT_RSNA_HEADER;
+        *sec_trailer=DOT11DECRYPT_CCMP_TRAILER;
         break;
-      case AIRPDCAP_KEY_TYPE_TKIP:
-        *sec_header=AIRPDCAP_RSNA_HEADER;
-        *sec_trailer=AIRPDCAP_TKIP_TRAILER;
+      case DOT11DECRYPT_KEY_TYPE_TKIP:
+        *sec_header=DOT11DECRYPT_RSNA_HEADER;
+        *sec_trailer=DOT11DECRYPT_TKIP_TRAILER;
         break;
       default:
         return NULL;
@@ -21948,10 +23332,10 @@ try_decrypt(tvbuff_t *tvb, packet_info *pinfo, guint offset, guint len, guint8 *
 
 /* Collect our WEP and WPA keys */
 static void
-set_airpdcap_keys(void)
+set_dot11decrypt_keys(void)
 {
   guint                     i;
-  AIRPDCAP_KEYS_COLLECTION  *keys = g_new(AIRPDCAP_KEYS_COLLECTION, 1);
+  DOT11DECRYPT_KEYS_COLLECTION  *keys = g_new(DOT11DECRYPT_KEYS_COLLECTION, 1);
   GByteArray                *bytes = NULL;
 
   keys->nKeys = 0;
@@ -21963,21 +23347,21 @@ set_airpdcap_keys(void)
 
     if (dk != NULL)
     {
-      AIRPDCAP_KEY_ITEM          key;
-      if (dk->type == AIRPDCAP_KEY_TYPE_WEP)
+      DOT11DECRYPT_KEY_ITEM          key;
+      if (dk->type == DOT11DECRYPT_KEY_TYPE_WEP)
       {
         gboolean res;
-        key.KeyType = AIRPDCAP_KEY_TYPE_WEP;
+        key.KeyType = DOT11DECRYPT_KEY_TYPE_WEP;
 
         bytes = g_byte_array_new();
         res = hex_str_to_bytes(dk->key->str, bytes, FALSE);
 
-        if (dk->key->str && res && (bytes->len > 0) && (bytes->len <= AIRPDCAP_WEP_KEY_MAXLEN))
+        if (dk->key->str && res && (bytes->len > 0) && (bytes->len <= DOT11DECRYPT_WEP_KEY_MAXLEN))
         {
           /*
            * WEP key is correct (well, the can be even or odd, so it is not
            * a real check, I think... is a check performed somewhere in the
-           * AirPDcap function???)
+           * Dot11Decrypt function???)
            */
           memcpy(key.KeyData.Wep.WepKey, bytes->data, bytes->len);
           key.KeyData.Wep.WepKeyLen = bytes->len;
@@ -21985,16 +23369,16 @@ set_airpdcap_keys(void)
           keys->nKeys += 1;
         }
       }
-      else if (dk->type == AIRPDCAP_KEY_TYPE_WPA_PWD)
+      else if (dk->type == DOT11DECRYPT_KEY_TYPE_WPA_PWD)
       {
-        key.KeyType = AIRPDCAP_KEY_TYPE_WPA_PWD;
+        key.KeyType = DOT11DECRYPT_KEY_TYPE_WPA_PWD;
 
         /* XXX - This just lops the end if the key off if it's too long.
          *       Should we handle this more gracefully? */
-        g_strlcpy(key.UserPwd.Passphrase, dk->key->str, AIRPDCAP_WPA_PASSPHRASE_MAX_LEN+1);
+        g_strlcpy(key.UserPwd.Passphrase, dk->key->str, DOT11DECRYPT_WPA_PASSPHRASE_MAX_LEN+1);
 
         key.UserPwd.SsidLen = 0;
-        if ((dk->ssid != NULL) && (dk->ssid->len <= AIRPDCAP_WPA_SSID_MAX_LEN))
+        if ((dk->ssid != NULL) && (dk->ssid->len <= DOT11DECRYPT_WPA_SSID_MAX_LEN))
         {
           memcpy(key.UserPwd.Ssid, dk->ssid->data, dk->ssid->len);
           key.UserPwd.SsidLen = dk->ssid->len;
@@ -22003,15 +23387,15 @@ set_airpdcap_keys(void)
         keys->Keys[keys->nKeys] = key;
         keys->nKeys += 1;
       }
-      else if (dk->type == AIRPDCAP_KEY_TYPE_WPA_PSK)
+      else if (dk->type == DOT11DECRYPT_KEY_TYPE_WPA_PSK)
       {
-        key.KeyType = AIRPDCAP_KEY_TYPE_WPA_PSK;
+        key.KeyType = DOT11DECRYPT_KEY_TYPE_WPA_PSK;
 
         bytes = g_byte_array_new();
         hex_str_to_bytes(dk->key->str, bytes, FALSE);
 
         /* XXX - Pass the correct array of bytes... */
-        if (bytes->len <= AIRPDCAP_WPA_PSK_LEN) {
+        if (bytes->len <= DOT11DECRYPT_WPA_PSK_LEN) {
           memcpy(key.KeyData.Wpa.Psk, bytes->data, bytes->len);
 
           keys->Keys[keys->nKeys] = key;
@@ -22027,7 +23411,7 @@ set_airpdcap_keys(void)
   }
 
   /* Now set the keys */
-  AirPDcapSetKeys(&airpdcap_ctx, keys->Keys, keys->nKeys);
+  Dot11DecryptSetKeys(&dot11decrypt_ctx, keys->Keys, keys->nKeys);
   g_free(keys);
 }
 
@@ -22036,12 +23420,12 @@ init_wepkeys(void)
 {
 
   /*
-   * XXX - AirPDcap - That God sends it to us beautiful (che dio ce la mandi bona)
-   * The next lines will add a key to the AirPDcap context. The keystring will be added
+   * XXX - Dot11Decrypt - That God sends it to us beautiful (che dio ce la mandi bona)
+   * The next lines will add a key to the Dot11Decrypt context. The keystring will be added
    * to the old WEP array too, but we don't care, because the packets will come here
    * already decrypted... One of these days we will fix this too
    */
-  set_airpdcap_keys();
+  set_dot11decrypt_keys();
 }
 
 /*
@@ -22200,12 +23584,12 @@ proto_register_ieee80211(void)
       FT_BOOLEAN, 8, TFS(&retry_flags), FLAG_RETRY,
       "Retransmission flag", HFILL }},
 
-    { &hf_ieee80211_fc_analysis_retransmission,
+    {&hf_ieee80211_fc_analysis_retransmission,
      {"Retransmission", "wlan.analysis.retransmission",
       FT_NONE, BASE_NONE, NULL, 0x0,
       "This frame is a suspected wireless retransmission", HFILL }},
 
-    { &hf_ieee80211_fc_analysis_retransmission_frame,
+    {&hf_ieee80211_fc_analysis_retransmission_frame,
      {"Retransmission of frame", "wlan.analysis.retransmission_frame",
       FT_FRAMENUM, BASE_NONE, NULL, 0x0,
       "This is a retransmission of frame #", HFILL }},
@@ -22245,7 +23629,7 @@ proto_register_ieee80211(void)
       FT_ETHER, BASE_NONE, NULL, 0,
       "Destination Hardware Address", HFILL }},
 
-    { &hf_ieee80211_addr_da_resolved,
+    {&hf_ieee80211_addr_da_resolved,
       {"Destination address (resolved)", "wlan.da_resolved", FT_STRING,
         BASE_NONE, NULL, 0x0,
         "Destination Hardware Address (resolved)", HFILL }},
@@ -22255,17 +23639,17 @@ proto_register_ieee80211(void)
       FT_ETHER, BASE_NONE, NULL, 0,
       "Source Hardware Address", HFILL }},
 
-    { &hf_ieee80211_addr_sa_resolved,
+    {&hf_ieee80211_addr_sa_resolved,
       {"Source address (resolved)", "wlan.sa_resolved", FT_STRING,
        BASE_NONE, NULL, 0x0,
        "Source Hardware Address (resolved)", HFILL }},
 
-    { &hf_ieee80211_addr,
+    {&hf_ieee80211_addr,
       {"Hardware address", "wlan.addr",
        FT_ETHER, BASE_NONE, NULL, 0,
        "SA, DA, BSSID, RA or TA Hardware Address", HFILL }},
 
-    { &hf_ieee80211_addr_resolved,
+    {&hf_ieee80211_addr_resolved,
       { "Hardware address (resolved)", "wlan.addr_resolved", FT_STRING,
         BASE_NONE, NULL, 0x0,
         "SA, DA, BSSID, RA or TA Hardware Address (resolved)", HFILL }},
@@ -22275,7 +23659,7 @@ proto_register_ieee80211(void)
       FT_ETHER, BASE_NONE, NULL, 0,
       "Receiving Station Hardware Address", HFILL }},
 
-    { &hf_ieee80211_addr_ra_resolved,
+    {&hf_ieee80211_addr_ra_resolved,
       {"Receiver address (resolved)", "wlan.ra_resolved", FT_STRING, BASE_NONE,
         NULL, 0x0, "Receiving Station Hardware Address (resolved)", HFILL }},
 
@@ -22284,7 +23668,7 @@ proto_register_ieee80211(void)
       FT_ETHER, BASE_NONE, NULL, 0,
       "Transmitting Station Hardware Address", HFILL }},
 
-    { &hf_ieee80211_addr_ta_resolved,
+    {&hf_ieee80211_addr_ta_resolved,
       {"Transmitter address (resolved)", "wlan.ta_resolved", FT_STRING,
         BASE_NONE, NULL, 0x0,
         "Transmitting Station Hardware Address (resolved)", HFILL }},
@@ -22294,7 +23678,7 @@ proto_register_ieee80211(void)
       FT_ETHER, BASE_NONE, NULL, 0,
       "Basic Service Set ID", HFILL }},
 
-    { &hf_ieee80211_addr_bssid_resolved,
+    {&hf_ieee80211_addr_bssid_resolved,
       {"BSS Id (resolved)", "wlan.bssid_resolved", FT_STRING, BASE_NONE, NULL,
         0x0, "Basic Service Set ID (resolved)", HFILL }},
 
@@ -22303,7 +23687,7 @@ proto_register_ieee80211(void)
       FT_ETHER, BASE_NONE, NULL, 0,
       "Station Hardware Address", HFILL }},
 
-    { &hf_ieee80211_addr_staa_resolved,
+    {&hf_ieee80211_addr_staa_resolved,
       {"STA address (resolved)", "wlan.staa_resolved", FT_STRING, BASE_NONE, NULL,
         0x0, "Station Hardware Address (resolved)", HFILL }},
 
@@ -22521,6 +23905,30 @@ proto_register_ieee80211(void)
       FT_UINT16, BASE_HEX, NULL, 0xf000,
       "Traffic Identifier (TID) for which a Basic BlockAck frame is requested", HFILL }},
 
+    {&hf_ieee80211_block_ack_multi_sta_aid11,
+     {"AID11", "wlan.ba.multi_sta.aid11",
+      FT_UINT16, BASE_HEX, NULL, 0x07ff, NULL, HFILL }},
+
+    {&hf_ieee80211_block_ack_multi_sta_ack_type,
+     {"Ack Type", "wlan.ba.multi_sta.ack_type",
+      FT_UINT16, BASE_HEX, NULL, 0x0800, NULL, HFILL }},
+
+    {&hf_ieee80211_block_ack_multi_sta_tid,
+     {"TID", "wlan.ba.multi_sta.tid",
+      FT_UINT16, BASE_HEX, NULL, 0xf000, NULL, HFILL }},
+
+    {&hf_ieee80211_block_ack_multi_sta_aid_tid,
+     {"AID TID Info", "wlan.ba.multi_sta.aid_tid_info",
+      FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+
+    {&hf_ieee80211_block_ack_multi_sta_reserved,
+     {"Reserved", "wlan.ba.multi_sta.reserved",
+      FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+
+    {&hf_ieee80211_block_ack_multi_sta_ra,
+     {"RA", "wlan.ba.multi_sta.ra",
+      FT_ETHER, BASE_NONE, NULL, 0x0, NULL, HFILL }},
+
     {&hf_ieee80211_block_ack_multi_tid_reserved,
      {"Reserved", "wlan.bar.mtid.tidinfo.reserved",
       FT_UINT16, BASE_HEX, 0, 0x0fff,
@@ -22573,11 +23981,6 @@ proto_register_ieee80211(void)
     {&hf_ieee80211_vht_ndp_annc_token_reserved,
      {"Reserved", "wlan.vht_ndp.token.reserved",
       FT_UINT8, BASE_HEX, NULL, 0x01,
-      NULL, HFILL }},
-
-    {&hf_ieee80211_vht_ndp_annc_sta_info,
-     {"STA Info", "wlan.vht_ndp.sta_info",
-      FT_UINT16, BASE_HEX, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_vht_ndp_annc_sta_info_aid12,
@@ -22660,12 +24063,12 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_ff_rm_tx_power,
      {"Transmit Power Used", "wlan.rm.tx_power",
-      FT_INT8, BASE_DEC, NULL, 0,
+      FT_INT8, BASE_DEC|BASE_UNIT_STRING, &units_dbm, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_ff_rm_max_tx_power,
      {"Max Transmit Power", "wlan.rm.max_tx_power",
-      FT_INT8, BASE_DEC, NULL, 0,
+      FT_INT8, BASE_DEC|BASE_UNIT_STRING, &units_dbm, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_ff_tpc,
@@ -23143,22 +24546,22 @@ proto_register_ieee80211(void)
       NULL, HFILL }},
 
     {&hf_ieee80211_ff_dmg_params_cbap_only,
-     {"CBAP Only", "wlan.dmp_params.cbap_only",
+     {"CBAP Only", "wlan.dmg_params.cbap_only",
       FT_BOOLEAN, 8, NULL, 0x04,
       NULL, HFILL }},
 
     {&hf_ieee80211_ff_dmg_params_cbap_src,
-     {"CBAP Source", "wlan.dmp_params.cbap_src",
+     {"CBAP Source", "wlan.dmg_params.cbap_src",
       FT_BOOLEAN, 8, NULL, 0x08,
       NULL, HFILL }},
 
     {&hf_ieee80211_ff_dmg_params_privacy,
-     {"DMG Privacy", "wlan.dmp_params.privacy",
+     {"DMG Privacy", "wlan.dmg_params.privacy",
       FT_BOOLEAN, 8, NULL, 0x10,
       NULL, HFILL }},
 
     {&hf_ieee80211_ff_dmg_params_policy,
-     {"ECPAC Policy Enforced", "wlan.dmp_params.policy",
+     {"ECAPC Policy Enforced", "wlan.dmg_params.policy",
       FT_BOOLEAN, 8, NULL, 0x20,
       NULL, HFILL }},
 
@@ -23442,6 +24845,41 @@ proto_register_ieee80211(void)
     {&hf_ieee80211_tag_pcp_center, /* DMG PCP/AP capa, bits [14] */
      {"Centralized PCP/AP Clustering", "wlan.dmg_capa.pcp_center",
       FT_BOOLEAN, 16, NULL, GENMASK(14, 14),
+      NULL, HFILL }},
+
+    {&hf_ieee80211_tag_sta_beam_track, /* DMG STA beam track capa*/
+     {"STA Beam Tracking Time Limit", "wlan.dmg_capa.beam_track",
+      FT_UINT16, BASE_DEC | BASE_UNIT_STRING, &units_microseconds, 0,
+      NULL, HFILL }},
+
+    {&hf_ieee80211_tag_ext_sc_mcs_max_tx, /* DMG STA Ext SC MCS Capa: Max TX*/
+     {"Extended SC Max Tx MCS Name", "wlan.dmg_capa.ext_sc_mcs_capa_max_tx",
+      FT_UINT8, BASE_DEC, VALS(extended_sc_mcs), GENMASK(2, 0),
+      NULL, HFILL }},
+
+    {&hf_ieee80211_tag_ext_sc_mcs_tx_code_7_8, /* DMG STA Ext SC MCS Capa: Tx code rate 7/8*/
+     {"Extended SC Tx MCS code rate 7/8", "wlan.dmg_capa.ext_sc_mcs_tx_code_7_8",
+      FT_BOOLEAN, 8, TFS(&tfs_supported_not_supported), GENMASK(3, 3),
+      NULL, HFILL }},
+
+    {&hf_ieee80211_tag_ext_sc_mcs_max_rx, /* DMG STA Ext SC MCS Capa: Max RX*/
+     {"Extended SC Max Rx MCS Name", "wlan.dmg_capa.ext_sc_mcs_capa_max_rx",
+      FT_UINT8, BASE_DEC, VALS(extended_sc_mcs), GENMASK(6, 4),
+      NULL, HFILL }},
+
+    {&hf_ieee80211_tag_ext_sc_mcs_rx_code_7_8, /* DMG STA Ext SC MCS Capa: Rx code rate 7/8*/
+     {"Extended SC Rx MCS code rate 7/8", "wlan.dmg_capa.ext_sc_mcs_rx_code_7_8",
+      FT_BOOLEAN, 8, TFS(&tfs_supported_not_supported), GENMASK(7, 7),
+      NULL, HFILL }},
+
+    {&hf_ieee80211_tag_max_basic_sf_amsdu, /* DMG Max Number of Basic Subframes in an A-MSDU*/
+     {"Max Number of Basic Subframes in an A-MSDU", "wlan.dmg_capa.max_basic_sf_amsdu",
+      FT_UINT8, BASE_RANGE_STRING | BASE_DEC, RVALS(max_basic_sf_amsdu), 0,
+      NULL, HFILL }},
+
+    {&hf_ieee80211_tag_max_short_sf_amsdu, /* DMG Max Number of short Subframes in an A-MSDU*/
+     {"Max Number of short Subframes in an A-MSDU", "wlan.dmg_capa.max_short_sf_amsdu",
+      FT_UINT8, BASE_RANGE_STRING | BASE_DEC, RVALS(max_short_sf_amsdu), 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_tag_PSRSI,
@@ -25644,6 +27082,10 @@ proto_register_ieee80211(void)
       FT_UINT8, BASE_DEC, NULL, 0,
       NULL, HFILL }},
 
+    {&hf_ieee80211_3gpp_gc_plmn,
+     {"PLMN", "wlan.fixed.anqp.3gpp_cellular_info.plmn_info",
+      FT_UINT24, BASE_HEX, NULL, 0, NULL, HFILL }},
+
     {&hf_ieee80211_ff_anqp_domain_name_len,
      {"Domain Name Length", "wlan.fixed.anqp.domain_name_list.len",
       FT_UINT8, BASE_DEC, NULL, 0,
@@ -25651,21 +27093,6 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_ff_anqp_domain_name,
      {"Domain Name", "wlan.fixed.anqp.domain_name_list.name",
-      FT_STRING, BASE_NONE, NULL, 0,
-      NULL, HFILL }},
-
-    {&hf_ieee80211_ff_anqp_venue_url_len,
-     {"Length", "wlan.fixed.anqp.venue_url_list.len",
-      FT_UINT8, BASE_DEC, NULL, 0,
-      NULL, HFILL }},
-
-    {&hf_ieee80211_ff_anqp_venue_url_number,
-     {"Venue Number", "wlan.fixed.anqp.venue_url_list.venue_number",
-      FT_UINT8, BASE_DEC, NULL, 0,
-      NULL, HFILL }},
-
-    {&hf_ieee80211_ff_anqp_venue_url,
-     {"Venue URL", "wlan.fixed.anqp.venue_url_list.venue_url",
       FT_STRING, BASE_NONE, NULL, 0,
       NULL, HFILL }},
 
@@ -25728,15 +27155,27 @@ proto_register_ieee80211(void)
 
     {&hf_hs20_indication_pps_mo_id_present,
      {"PPS MO ID Present", "wlan.hs20.indication.pps_mo_id_present",
-      FT_UINT8, BASE_DEC, NULL, 0x02, NULL, HFILL }},
+      FT_BOOLEAN, 8, TFS(&tfs_present_not_present), 0x02, NULL, HFILL }},
 
     {&hf_hs20_indication_anqp_domain_id_present,
      {"ANQP Domain ID Present", "wlan.hs20.indication.anqp_domain_id_present",
-      FT_UINT8, BASE_DEC, NULL, 0x04, NULL, HFILL }},
+      FT_BOOLEAN, 8, TFS(&tfs_present_not_present), 0x04, NULL, HFILL }},
+
+    {&hf_hs20_reserved,
+      { "Reserved", "wlan.hs20.indication.reserved",
+       FT_BOOLEAN, 8, TFS(&tfs_set_notset), 0x80, NULL, HFILL }},
 
     {&hf_hs20_indication_release_number,
      {"Release Number", "wlan.hs20.indication.release_number",
       FT_UINT8, BASE_DEC, VALS(hs20_indication_release_number_vals), 0xF0, NULL, HFILL }},
+
+    {&hf_hs20_indication_pps_mo_id,
+     {"PPS MO ID", "wlan.hs20.indication.pps_mo_id",
+      FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_indication_anqp_domain_id,
+     {"ANQP Domain ID", "wlan.hs20.indication.domain_id",
+      FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
 
     {&hf_hs20_anqp_subtype,
      {"Subtype", "wlan.hs20.anqp.subtype",
@@ -25850,6 +27289,210 @@ proto_register_ieee80211(void)
      {"Operating Class", "wlan.hs20.anqp.oper_class_indic.oper_class",
       FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
 
+    {&hf_hs20_osu_friendly_names_len,
+     {"OSU Friendly Name Length", "wlan.hs20.osu_friendly_names_len",
+      FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_friendly_name_length,
+     {"Length", "wlan.hs20.osu_friendly_name.len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_friendly_name_language,
+     {"Language Code", "wlan.hs20.osu_friendly_name.language",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_friendly_name_name,
+     {"OSU Friendly Name", "wlan.hs20.osu_friendly_name.name",
+     FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_server_uri_len,
+     {"OSU Server URI Length", "wlan.hs20.osu_server_uri_len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_server_uri,
+     {"OSU Server URI", "wlan.hs20.osu_server_uri",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_method_list_len,
+     {"OSU Method List Length", "wlan.hs20.osu_method_list_len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_method_val,
+     {"OSU Method", "wlan.hs20.osu_method_list.method",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_icons_avail_len,
+     {"Icons Available Length", "wlan.hs20.osu_icons_avail_len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_providers_list_ssid_len,
+     {"SSID Length", "wlan.hs20.anqp_osu_prov_list.ssid_len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_providers_ssid,
+     {"SSID", "wlan.hs20.anqp_osu_prov_list.ssid",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_providers_count,
+     {"Number of OSU Providers", "wlan.hs20.anqp_osu_prov_list.number",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_prov_length,
+     {"OSU Provider Length", "wlan.hs20.anqp_osu_prov.len",
+      FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_icon_request_filename,
+     {"Icon Filename", "wlan.hs20.anqp_icon_request.icon_filename",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_osu_icon_avail_width,
+     {"Icon Width", "wlan.hs20.osu_icons_avail.icon_width",
+      FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_osu_icon_avail_height,
+     {"Icon Height", "wlan.hs20.osu_icons_avail.icon_height",
+      FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_osu_icon_avail_lang_code,
+     {"Language Code", "wlan.hs20.osu_icons_avail.lang_code",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_osu_icon_avail_icon_type_len,
+     {"Icon Type Length", "wlan.hs20.osu_icons_avail.icon_type_len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_osu_icon_avail_icon_type,
+     {"Icon Type", "wlan.hs20.osu_icons_avail.icon_type",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_osu_icon_avail_filename_len,
+     {"Icon Filename Length", "wlan.hs20.osu_icons_avail.icon_filename_len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_osu_icon_avail_filename,
+     {"Icon Filename", "wlan.hs20.osu_icons_avail.icon_filename",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_nai_len,
+     {"OSU_NAI Length", "wlan.hs20.osu_nai.len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_nai,
+     {"OSU_NAI", "wlan.hs20.osu_nai",
+      FT_BYTES, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_service_desc_len,
+     {"OSU Service Desctription Length", "wlan.hs20.osu_service_desc_len",
+      FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_service_desc_duple_len,
+     {"Length", "wlan.hs20.osu_service_desc.duple.len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_service_desc_lang,
+     {"Language Code", "wlan.hs20.osu_service_desc.duple.lang",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_osu_service_desc,
+     {"OSU Service Description", "wlan.hs20.osu_service_desc.duple.desc",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_icon_binary_file_status,
+     {"Download Status Code", "wlan.hs20.anqp_icon_request.download_status",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_icon_type_length,
+     {"Icon Type Length", "wlan.hs20.anqp_icon_request.icon_type_len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_icon_type,
+     {"Icon Type", "wlan.hs20.anqp_icon_request.icon_type",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_icon_binary_data_len,
+     {"Icon Binary Data Length", "wlan.anqp_icon_request.icon_binary_data_len",
+      FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_icon_binary_data,
+     {"Icon Binary Data", "wlan.h220.anqp_icon_request.icon_binary_data",
+      FT_BYTES, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_subscription_remediation_url_len,
+     {"Server URL Length", "wlan.hs20.subs_remediation.server_url_len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_subscription_remediation_server_url,
+     {"Server URL", "wlan.hs20.subs_remediation.server_url",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_subscription_remediation_server_method,
+     {"Server Method", "wlan.hs20.subs_remediation.server_method",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_deauth_reason_code,
+     {"De-Auth Reason Code", "wlan.hs20.deauth.reason_code",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_reauth_delay,
+     {"Re-Auth Delay", "wlan.hs20.deauth.reauth_delay",
+      FT_UINT16, BASE_DEC|BASE_UNIT_STRING, &units_seconds, 0, NULL, HFILL }},
+
+    {&hf_hs20_deauth_reason_url_len,
+     {"Reason URL Length", "wlan.hs20.deauth.reason_url_len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_deauth_imminent_reason_url,
+     {"Reason URL", "wlan.hs20.deauth.reason_url",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_anqp_venue_url_length,
+     {"Length", "wlan.hs20.venue_url.len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_anqp_venue_number,
+     {"Venue number", "wlan.hs20.venue_url.venue_num",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_anqp_venue_url,
+     {"Venue URL", "wlan.hs20.venue_url.url",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_anqp_advice_of_charge_length,
+     {"Length", "wlan.hs20.advice_of_charge.len",
+      FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_anqp_advice_of_charge_type,
+     {"Advice of Charge Type", "wlan.hs20.advice_of_charge.type",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_anqp_aoc_nai_realm_encoding,
+     {"NAI Realm Encoding", "wlan.hs20.advice_of_charge.nai_realm_enc",
+      FT_UINT8, BASE_HEX, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_anqp_aoc_nai_realm_len,
+     {"NAI Realm Length", "wlan.hs20.advice_of_charge.nai_realm_len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_anqp_aoc_nai_realm,
+     {"NAI Realm", "wlan.hs20.advice_of_charge.nai_realm",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_anqp_aoc_plan_len,
+     {"Plan length", "wlan.hs20.advice_of_charge.plan_info_tuples.plan_len",
+      FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_anqp_aoc_plan_lang,
+     {"Plan language", "wlan.hs20.advice_of_charge.plan_info_tuples.plan_lang",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_anqp_aoc_plan_curcy,
+     {"Plan currency", "wlan.hs20.advice_of_charge.plan_info_tuples.plan_curcy",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
+    {&hf_hs20_anqp_aoc_plan_information,
+     {"Plan information", "wlan.hs20.advice_of_charge.plan_info_tuples.info",
+      FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }},
+
     {&hf_ieee80211_tag,
      {"Tag", "wlan.tag",
       FT_NONE, BASE_NONE, 0x0, 0,
@@ -25864,11 +27507,6 @@ proto_register_ieee80211(void)
      {"Tag length", "wlan.tag.length",
       FT_UINT32, BASE_DEC, NULL, 0,
       "Length of tag", HFILL }},
-
-    {&hf_ieee80211_tag_interpretation,
-     {"Tag interpretation", "wlan.tag.interpretation",
-      FT_STRING, BASE_NONE, NULL, 0,
-      "Interpretation of tag", HFILL }},
 
     {&hf_ieee80211_tag_data,
      {"Tag Data", "wlan.tag.data",
@@ -25991,8 +27629,8 @@ proto_register_ieee80211(void)
       NULL, HFILL }},
 
     {&hf_ieee80211_tag_country_info_fnm_mtpl,
-     {"Maximum Transmit Power Level (in dBm)", "wlan.country_info.fnm.mtpl",
-      FT_UINT8, BASE_DEC, NULL, 0x0,
+     {"Maximum Transmit Power Level", "wlan.country_info.fnm.mtpl",
+      FT_INT8, BASE_DEC|BASE_UNIT_STRING, &units_dbm, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_tag_country_info_rrc,
@@ -26539,12 +28177,12 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_mcsset,
      {"Rx Supported Modulation and Coding Scheme Set", "wlan.ht.mcsset",
-      FT_STRING, BASE_NONE, NULL, 0,
+      FT_NONE, BASE_NONE, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_mcsset_vs,
      {"Rx Supported Modulation and Coding Scheme Set (VS)", "wlan.vs.ht.mcsset",
-      FT_STRING, BASE_NONE, NULL, 0,
+      FT_NONE, BASE_NONE, NULL, 0,
       "Vendor Specific Rx Supported Modulation and Coding Scheme Set", HFILL }},
 
     {&hf_ieee80211_mcsset_rx_bitmask,
@@ -26887,6 +28525,10 @@ proto_register_ieee80211(void)
       FT_UINT16, BASE_HEX, VALS(vht_supported_mcs_flag), 0xc000,
       NULL, HFILL }},
 
+    {&hf_ieee80211_vht_mcsset_max_nsts_total,
+     {"MaX NSTS Total", "wlan.vht.mcsset.max_nsts_total",
+      FT_UINT16, BASE_DEC, NULL, 0xe000, NULL, HFILL }},
+
     {&hf_ieee80211_vht_mcsset_rx_highest_long_gi,
      {"Rx Highest Long GI Data Rate (in Mb/s, 0 = subfield not in use)", "wlan.vht.mcsset.rxhighestlonggirate",
       FT_UINT16, BASE_HEX, NULL, 0x1fff,
@@ -26941,6 +28583,14 @@ proto_register_ieee80211(void)
      {"Tx Highest Long GI Data Rate  (in Mb/s, 0 = subfield not in use)", "wlan.vht.mcsset.txhighestlonggirate",
       FT_UINT16, BASE_HEX, NULL, 0x1fff,
       NULL, HFILL }},
+
+    {&hf_ieee80211_vht_mcsset_ext_nss_bw_cap,
+     {"Extended NSS BW Capable", "wlan.vht.ncsset.ext_nss_bw_cap",
+      FT_BOOLEAN, 16, TFS(&tfs_capable_not_capable), 0x2000, NULL, HFILL }},
+
+    {&hf_ieee80211_vht_mcsset_reserved,
+     {"Reserved", "wlan.vht.ncsset.reserved",
+      FT_UINT16, BASE_HEX, NULL, 0xc000, NULL, HFILL }},
 
     {&hf_ieee80211_vht_op,
      {"VHT Operation Info", "wlan.vht.op",
@@ -27222,9 +28872,9 @@ proto_register_ieee80211(void)
       FT_UINT8, BASE_HEX, VALS(ht_info_secondary_channel_offset_flags), 0x03,
       NULL, HFILL }},
 
-    {&hf_ieee80211_ht_info_channel_width,
+    {&hf_ieee80211_ht_info_sta_channel_width,
      {"Supported channel width", "wlan.ht.info.chanwidth",
-      FT_BOOLEAN, 8, TFS(&ht_info_channel_width_flag), 0x04,
+      FT_BOOLEAN, 8, TFS(&ht_info_channel_sta_width_flag), 0x04,
       NULL, HFILL }},
 
     {&hf_ieee80211_ht_info_rifs_mode,
@@ -27232,24 +28882,18 @@ proto_register_ieee80211(void)
       FT_BOOLEAN, 8, TFS(&ht_info_rifs_mode_flag), 0x08,
       NULL, HFILL }},
 
-    {&hf_ieee80211_ht_info_psmp_stas_only,
-     {"Power Save Multi-Poll (PSMP) stations only", "wlan.ht.info.psmponly",
-      FT_BOOLEAN, 8, TFS(&ht_info_psmp_stas_only_flag), 0x10,
-      NULL, HFILL }},
-
-    {&hf_ieee80211_ht_info_service_interval_granularity,
-     {"Shortest service interval", "wlan.ht.info",
-      FT_UINT8, BASE_HEX, VALS(ht_info_service_interval_granularity_flags), 0xe0,
-      NULL, HFILL }},
+    {&hf_ieee80211_ht_info_reserved_b4_b7,
+     {"Reserved", "wlan.ht.info.reserved_b4_b7",
+      FT_UINT8, BASE_HEX, NULL, 0xf0, NULL, HFILL }},
 
     {&hf_ieee80211_ht_info_delimiter2,
      {"HT Information Subset (2 of 3)", "wlan.ht.info.delim2",
       FT_UINT16, BASE_HEX, NULL, 0,
       NULL, HFILL }},
 
-    {&hf_ieee80211_ht_info_operating_mode,
-     {"Operating mode of BSS", "wlan.ht.info.operatingmode",
-      FT_UINT16, BASE_HEX, VALS(ht_info_operating_mode_flags), 0x0003,
+    {&hf_ieee80211_ht_info_protection,
+     {"HT Protection", "wlan.ht.info.ht_protection",
+      FT_UINT16, BASE_HEX, VALS(ht_info_operating_protection_mode_flags), 0x0003,
       NULL, HFILL }},
 
     {&hf_ieee80211_ht_info_non_greenfield_sta_present,
@@ -27257,19 +28901,22 @@ proto_register_ieee80211(void)
       FT_BOOLEAN, 16, TFS(&ht_info_non_greenfield_sta_present_flag), 0x0004,
       NULL, HFILL }},
 
-    {&hf_ieee80211_ht_info_transmit_burst_limit,
-     {"Transmit burst limit", "wlan.ht.info.burstlim",
-      FT_BOOLEAN, 16, TFS(&ht_info_transmit_burst_limit_flag), 0x0008,
-      NULL, HFILL }},
+    {&hf_ieee80211_ht_info_reserved_b11,
+     {"Reserved", "wlan.ht.info.reserved_b11",
+      FT_UINT16, BASE_HEX, NULL, 0x0008, NULL, HFILL }},
 
     {&hf_ieee80211_ht_info_obss_non_ht_stas_present,
      {"OBSS non-HT STAs present", "wlan.ht.info.obssnonht",
       FT_BOOLEAN, 16, TFS(&ht_info_obss_non_ht_stas_present_flag), 0x0010,
       NULL, HFILL }},
 
-    {&hf_ieee80211_ht_info_reserved_1,
-     {"Reserved", "wlan.ht.info.reserved1",
-      FT_UINT16, BASE_HEX, NULL, 0xffe0,
+    {&hf_ieee80211_ht_info_channel_center_freq_seg_2,
+     {"Channel Center Frequency Segment 2", "wlan.ht.info.chan_center_freq_seg_2",
+      FT_UINT16, BASE_DEC, NULL, 0x1fe0, NULL, HFILL }},
+
+    {&hf_ieee80211_ht_info_reserved_b21_b23,
+     {"Reserved", "wlan.ht.info.reserved_b21_b23",
+      FT_UINT16, BASE_HEX, NULL, 0xe000,
       NULL, HFILL }},
 
     {&hf_ieee80211_ht_info_delimiter3,
@@ -27277,10 +28924,9 @@ proto_register_ieee80211(void)
       FT_UINT16, BASE_HEX, NULL, 0,
       NULL, HFILL }},
 
-    {&hf_ieee80211_ht_info_reserved_2,
-     {"Reserved", "wlan.ht.info.reserved2",
-      FT_UINT16, BASE_HEX, NULL, 0x003f,
-      NULL, HFILL }},
+    {&hf_ieee80211_ht_info_reserved_b24_b29,
+     {"Reserved", "wlan.ht.info.reserved_b24_b29",
+      FT_UINT16, BASE_HEX, NULL, 0x003f, NULL, HFILL }},
 
     {&hf_ieee80211_ht_info_dual_beacon,
      {"Dual beacon", "wlan.ht.info.dualbeacon",
@@ -27289,7 +28935,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_ht_info_dual_cts_protection,
      {"Dual Clear To Send (CTS) protection", "wlan.ht.info.dualcts",
-      FT_BOOLEAN, 16, TFS(&ht_info_dual_cts_protection_flag), 0x0080,
+      FT_BOOLEAN, 16, TFS(&tfs_required_not_required), 0x0080,
       NULL, HFILL }},
 
     {&hf_ieee80211_ht_info_secondary_beacon,
@@ -27312,8 +28958,8 @@ proto_register_ieee80211(void)
       FT_BOOLEAN, 16, TFS(&ht_info_pco_phase_flag), 0x0800,
       NULL, HFILL }},
 
-    {&hf_ieee80211_ht_info_reserved_3,
-     {"Reserved", "wlan.ht.info.reserved3",
+    {&hf_ieee80211_ht_info_reserved_b36_b39,
+     {"Reserved", "wlan.ht.info.reserved_b36_b39",
       FT_UINT16, BASE_HEX, NULL, 0xf000,
       NULL, HFILL }},
 
@@ -27640,12 +29286,12 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_tag_power_capability_min,
      {"Minimum Transmit Power", "wlan.powercap.min",
-      FT_UINT8, BASE_DEC_HEX, NULL, 0,
+      FT_INT8, BASE_DEC, NULL, 0,
       "The nominal minimum transmit power with which the STA is capable of transmitting in the current channel", HFILL }},
 
     {&hf_ieee80211_tag_power_capability_max,
      {"Maximum Transmit Power", "wlan.powercap.max",
-      FT_UINT8, BASE_DEC_HEX, NULL, 0,
+      FT_INT8, BASE_DEC, NULL, 0,
       "The nominal maximum transmit power with which the STA is capable of transmitting in the current channel", HFILL }},
 
     {&hf_ieee80211_tag_tpc_report_trsmt_pow,
@@ -29522,6 +31168,27 @@ proto_register_ieee80211(void)
       FT_STRING, BASE_NONE, NULL, 0,
       NULL, HFILL }},
 
+    /* Vendor Specific : Aerohive */
+    {&hf_ieee80211_vs_aerohive_unknown,
+     {"Unknown", "wlan.vs.aerohive.unknown",
+      FT_BYTES, BASE_NONE, NULL, 0,
+      NULL, HFILL }},
+
+    {&hf_ieee80211_vs_aerohive_hostname_length,
+     {"Host Name Length", "wlan.vs.aerohive.hostname_length",
+      FT_UINT8, BASE_DEC, NULL, 0,
+      NULL, HFILL }},
+
+    {&hf_ieee80211_vs_aerohive_hostname,
+     {"Host Name", "wlan.vs.aerohive.hostname",
+      FT_STRING, BASE_NONE, NULL, 0,
+      NULL, HFILL }},
+
+    {&hf_ieee80211_vs_aerohive_data,
+     {"Data", "wlan.vs.aerohive.data",
+      FT_BYTES, BASE_NONE, NULL, 0,
+      NULL, HFILL }},
+
     {&hf_ieee80211_tsinfo,
      {"Traffic Stream (TS) Info", "wlan.ts_info",
       FT_UINT24, BASE_HEX, NULL, 0,
@@ -29744,136 +31411,156 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_he_umrs_he_tb_ppdu_len,
      {"HE TB PPDU Length", "wlan.htc.he.a_control.umrs.he_tb_ppdu_len",
-      FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_DEC, NULL, 0x0000001f, NULL, HFILL }},
 
     {&hf_ieee80211_he_umrs_ru_allocation,
      {"RU Allocation", "wlan.htc.he.a_control.umrs.ru_allocation",
-      FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_HEX, NULL, 0x00001fe0, NULL, HFILL }},
 
     {&hf_ieee80211_he_dl_tx_power,
      {"DL Tx Power", "wlan.htc.he.a_control.umrs.dl_tx_power",
-      FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_HEX, NULL, 0x0003e000, NULL, HFILL }},
 
     {&hf_ieee80211_he_ul_target_rssi,
      {"UL Target RSSI", "wlan.htc.he.a_control.umrs.ul_target_rssi",
-      FT_UINT8, BASE_CUSTOM, CF_FUNC(ul_target_rssi_base_custom), 0x0,
-       NULL, HFILL }},
+      FT_UINT32, BASE_CUSTOM, CF_FUNC(ul_target_rssi_base_custom),
+      0x007c0000, NULL, HFILL }},
 
     {&hf_ieee80211_he_ul_mcs,
      {"UL MCS", "wlan.htc.he.a_control.umrs.ul_mcs",
-      FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_HEX, NULL, 0x01800000, NULL, HFILL }},
+
+    {&hf_ieee80211_he_ul_reserved,
+     {"reserved", "wlan.htc.he.a_control.umrs.reserved",
+      FT_UINT32, BASE_HEX, NULL, 0x02000000, NULL, HFILL }},
 
     {&hf_ieee80211_he_om_rx_nss,
      {"Rx NSS", "wlan.htc.he.a_control.om.rx_nss",
-      FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+      FT_UINT16, BASE_DEC, NULL, 0x0007, NULL, HFILL }},
 
     {&hf_ieee80211_he_om_channel_width,
      {"Channel Width", "wlan.htc.he.a_control.om.channel_width",
-      FT_UINT8, BASE_DEC, NULL, 0x00, NULL, HFILL }},
+      FT_UINT16, BASE_DEC, NULL, 0x0018, NULL, HFILL }},
 
     {&hf_ieee80211_he_om_ul_mu_disable,
      {"UL MU Disable", "wlan.htc.he.a_control.om.ul_mu_disable",
-      FT_BOOLEAN, 1, NULL, 0x0, NULL, HFILL }},
+      FT_BOOLEAN, 16, NULL, 0x0020, NULL, HFILL }},
 
     {&hf_ieee80211_he_om_tx_nsts,
      {"Tx NSTS", "wlan.htc.he.a_control.om.tx_nsts",
-      FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+      FT_UINT16, BASE_DEC, NULL, 0x01c0, NULL, HFILL }},
+
+    {&hf_ieee80211_he_om_reserved,
+     {"Reserved", "wlan.htc.he.a_control.om.reserved",
+      FT_UINT16, BASE_HEX, NULL, 0x0e00, NULL, HFILL }},
 
     {&hf_ieee80211_he_hla_unsolicited_mfb,
-     {"Unsolicited MFB", "wlan.htc.he.a_control.hla.unsolicited_mrq",
-      FT_BOOLEAN, 8, NULL, 0x0, NULL, HFILL }},
+     {"Unsolicited MFB", "wlan.htc.he.a_control.hla.unsolicited_mfb",
+      FT_BOOLEAN, 32, NULL, 0x00000001, NULL, HFILL }},
 
     {&hf_ieee80211_he_hla_mrq,
      {"MRQ", "wlan.htc.he.a_control.hla.mrq",
-      FT_BOOLEAN, 8, NULL, 0x0, NULL, HFILL }},
+      FT_BOOLEAN, 32, NULL, 0x00000002, NULL, HFILL }},
 
     {&hf_ieee80211_he_hla_nss,
      {"NSS", "wlan.htc.he.a_control.hla.NSS",
-      FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_DEC, NULL, 0x0000001c, NULL, HFILL }},
 
     {&hf_ieee80211_he_hla_he_mcs,
      {"HE-MCS", "wlan.htc.he.a_control.hla.he_mcs",
-      FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_DEC, NULL, 0x000001e0, NULL, HFILL }},
 
     {&hf_ieee80211_he_hla_dcm,
      {"DCM", "wlan.htc.he.a_control.hla.dcm",
-      FT_BOOLEAN, 8, NULL, 0x0, NULL, HFILL }},
+      FT_BOOLEAN, 32, NULL, 0x00000200, NULL, HFILL }},
 
     {&hf_ieee80211_he_hla_ru,
      {"RU", "wlan.htc.he.a_control.hla.ru",
-      FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_DEC, NULL, 0x0003fc00, NULL, HFILL }},
 
     {&hf_ieee80211_he_hla_bw,
      {"BW", "wlan.htc.he.a_control.hla.bw",
-      FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_DEC, NULL, 0x000c0000, NULL, HFILL }},
 
     {&hf_ieee80211_he_hla_msi_ppdu_type,
      {"MSI/PPDU Type", "wlan.htc.he.a_control.hla.msi_ppdu_type",
-      FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_DEC, NULL, 0x00700000, NULL, HFILL }},
 
     {&hf_ieee80211_he_hla_tx_bf,
      {"Tx BF", "wlan.htc.he.a_control.hla.tx_bf",
-      FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+      FT_BOOLEAN, 32, NULL, 0x00800000, NULL, HFILL }},
+
+    {&hf_ieee80211_he_hla_reserved,
+     {"Reserved", "wlan.htc.he.a_control.hla.reserved",
+      FT_UINT32, BASE_HEX, NULL, 0x03000000, NULL, HFILL }},
 
     {&hf_ieee80211_he_bsr_aci_bitmap,
      {"ACI Bitmap", "wlan.htc.he.a_control.bsr.aci_bitmap",
-      FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_HEX, NULL, 0x0000000f, NULL, HFILL }},
 
     {&hf_ieee80211_he_bsr_delta_tid,
      {"Delta TID", "wlan.htc.he.a_control.bsr.delta_tid",
-      FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_HEX, NULL, 0x00000030, NULL, HFILL }},
 
     {&hf_ieee80211_he_bsr_aci_high,
      {"ACI High", "wlan.htc.he.a_control.bsr.aci_high",
-      FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_HEX, NULL, 0x000000c0, NULL, HFILL }},
 
     {&hf_ieee80211_he_bsr_scaling_factor,
      {"Scaling Factor", "wlan.htc.he.a_control.bsr.scaling_factor",
-      FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_HEX, NULL, 0x00000300, NULL, HFILL }},
 
     {&hf_ieee80211_he_bsr_queue_size_high,
      {"Queue Size High", "wlan.htc.he.a_control.bsr.queue_size_high",
-      FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_HEX, NULL, 0x0003fc00, NULL, HFILL }},
 
     {&hf_ieee80211_he_bsr_queue_size_all,
      {"Queue Size All", "wlan.htc.he.a_control.bsr.queue_size_all",
-      FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+      FT_UINT32, BASE_HEX, NULL, 0x03fc0000, NULL, HFILL }},
 
     {&hf_ieee80211_he_uph_ul_power_headroom,
      {"UL Power Headroom", "wlan.htc.he.a_control.uph.ul_power_headroom",
-      FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+      FT_UINT8, BASE_DEC, NULL, 0x00000001f, NULL, HFILL }},
 
     {&hf_ieee80211_he_uph_ul_min_transmit_power_flag,
      {"Minimum Transmit Power Flag", "wlan.htc.he.a_control.uph.min_transmit_power_flag",
-      FT_BOOLEAN, 1, NULL, 0x0, NULL, HFILL }},
+      FT_BOOLEAN, 8, NULL, 0x00000020, NULL, HFILL }},
 
-    {&hf_ieee80211_he_cci_ac_constraint,
-     {"AC Constraint", "wlan.htc.he.a_control.cci.ac_constraint",
-      FT_BOOLEAN, 1, NULL, 0x0, NULL, HFILL }},
-
-    {&hf_ieee80211_he_cci_rdg_more_ppdu,
-     {"RDG/More PPDU", "wlan.htc.he.a_control.cci.rdg_more_ppdu",
-      FT_BOOLEAN, 1, NULL, 0x0, NULL, HFILL }},
-
-    {&hf_ieee80211_he_cci_sr_ppdu_indic,
-     {"SR PPDU Indication", "wlan.htc.he.a_control.cci.sr_ppdu_indic",
-      FT_BOOLEAN, 1, NULL, 0x0, NULL, HFILL }},
+    {&hf_ieee80211_he_uph_reserved,
+     {"Reserved", "wlan.htc.he.a_control.uph.reserved",
+      FT_UINT8, BASE_HEX, NULL, 0x000000c0, NULL, HFILL }},
 
     {&hf_ieee80211_he_btc_avail_chan,
      {"Available Channel Bitmap", "wlan.htc.he.a_control.bqr.avail_chan_bitmap",
-      FT_UINT8, BASE_HEX, NULL, 0, NULL, HFILL }},
+      FT_UINT16, BASE_HEX, NULL, 0, NULL, HFILL }},
 
     {&hf_ieee80211_he_btc_reserved,
      {"Reserved", "wlan.htc.he.a_control.bqr.reserved",
-      FT_UINT8, BASE_HEX, NULL, 0, NULL, HFILL }},
+      FT_UINT16, BASE_HEX, NULL, 0, NULL, HFILL }},
+
+    {&hf_ieee80211_he_cci_ac_constraint,
+     {"AC Constraint", "wlan.htc.he.a_control.cci.ac_constraint",
+      FT_BOOLEAN, 32, NULL, 0x01, NULL, HFILL }},
+
+    {&hf_ieee80211_he_cci_rdg_more_ppdu,
+     {"RDG/More PPDU", "wlan.htc.he.a_control.cci.rdg_more_ppdu",
+      FT_BOOLEAN, 32, NULL, 0x02, NULL, HFILL }},
+
+    {&hf_ieee80211_he_cci_sr_ppdu_indic,
+     {"SR PPDU Indication", "wlan.htc.he.a_control.cci.sr_ppdu_indic",
+      FT_BOOLEAN, 32, NULL, 0x04, NULL, HFILL }},
+
+    {&hf_ieee80211_he_cci_reserved,
+     {"Reserved", "wlan.htc.htc.a_control.cci.reserved",
+      FT_UINT32, BASE_HEX, NULL, 0xF8, NULL, HFILL }},
 
     {&hf_ieee80211_he_trigger_common_info,
      {"HE Trigger Common Info", "wlan.trigger.he.common_info",
-      FT_BYTES, BASE_NONE, NULL, 0, NULL, HFILL }},
+      FT_UINT64, BASE_HEX, NULL, 0, NULL, HFILL }},
 
     {&hf_ieee80211_he_trigger_type,
      {"Trigger Type", "wlan.trigger.he.trigger_type",
-      FT_UINT64, BASE_DEC, VALS(trigger_type_vals),
+      FT_UINT64, BASE_DEC|BASE_VAL64_STRING, VALS64(trigger_type_vals),
         0x000000000000000F, NULL, HFILL }},
 
     {&hf_ieee80211_he_trigger_length,
@@ -29890,11 +31577,11 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_he_trigger_bw,
      {"BW", "wlan.trigger.he.bw",
-      FT_UINT64, BASE_DEC, VALS(bw_subfield_vals), 0x00000000000C0000, NULL, HFILL }},
+      FT_UINT64, BASE_DEC|BASE_VAL64_STRING, VALS64(bw_subfield_vals), 0x00000000000C0000, NULL, HFILL }},
 
     {&hf_ieee80211_he_trigger_gi_and_ltf_type,
      {"GI And LTF Type", "wlan.trigger.he.gi_and_ltf_type",
-      FT_UINT64, BASE_DEC, VALS(gi_and_ltf_type_subfield_vals), 0x0000000000300000,
+      FT_UINT64, BASE_DEC|BASE_VAL64_STRING, VALS64(gi_and_ltf_type_subfield_vals), 0x0000000000300000,
         NULL, HFILL }},
 
     {&hf_ieee80211_he_trigger_mu_mimo_ltf_mode,
@@ -30091,7 +31778,7 @@ proto_register_ieee80211(void)
        NULL, HFILL }},
 
     {&hf_he_ndp_annc_feedback_type_and_ng,
-     {"Feedback Type and Ng", "wlan.he.sta_info.feedback_type_and_ng",
+     {"Feedback Type and Ng", "wlan.he_ndp.sta_info.feedback_type_and_ng",
       FT_UINT32, BASE_HEX, NULL, 0x06000000, NULL, HFILL }},
 
     {&hf_he_ndp_annc_disambiguation,
@@ -30443,6 +32130,115 @@ proto_register_ieee80211(void)
      {"Scan Activity Threshold", "wlan.obss.sat",
       FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
 
+    /* Group Data Cypher Suite: 802.11-2012: 8.4.2.25.1 */
+    {&hf_group_data_cipher_suite_oui,
+     {"Group Data Cypher Suite OUI", "wlan.osen.gdcs.oui",
+      FT_UINT24, BASE_OUI, NULL, 0, NULL, HFILL }},
+
+    /* TODO: List the suite names ... */
+    {&hf_group_data_cipher_suite_type,
+     {"Group Data Cypher Suite type", "wlan.osen.gdcs.type",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_osen_pcs_count,
+     {"OSEN Pairwise Cipher Suite Count", "wlan.osen.pwcs.count",
+      FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_osen_pairwise_cipher_suite_oui,
+     {"OSEN Pairwise Cypher Suite OUI", "wlan.osen.pwcs.oui",
+      FT_UINT24, BASE_OUI, NULL, 0, NULL, HFILL }},
+
+    {&hf_osen_pairwise_cipher_suite_type,
+     {"OSEN Pairwise Cypher Suite type", "wlan.osen.pwcs.type",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_osen_akm_count,
+     {"OSEN AKM Cipher Suite Count", "wlan.osen.akms.count",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_osen_akm_cipher_suite_oui,
+     {"OSEN AKM Cipher Suite OUI", "wlan.osen.akms.oui",
+      FT_UINT24, BASE_OUI, NULL, 0, NULL, HFILL }},
+
+    {&hf_osen_akm_cipher_suite_type,
+     {"OSEN AKM Cipher Suite Type", "wlan.osen.akms.type",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_osen_rsn_cap_preauth,
+     {"RSN Pre-Auth capabilities", "wlan.osen.rsn.capabilities.preauth",
+      FT_BOOLEAN, 16, TFS(&rsn_preauth_flags), 0x0001, NULL, HFILL }},
+
+    {&hf_osen_rsn_cap_no_pairwise,
+     {"RSN No Pairwise capabilities", "wlan.osen.rsn.capabilities.no_pairwise",
+      FT_BOOLEAN, 16, TFS(&rsn_no_pairwise_flags), 0x0002, NULL, HFILL }},
+
+    {&hf_osen_rsn_cap_ptksa_replay_counter,
+     {"RSN PTKSA Replay Counter capabilities",
+                "wlan.osen.rsn.capabilities.ptksa_replay_counter",
+      FT_UINT16, BASE_HEX, VALS(rsn_cap_replay_counter), 0x000C, NULL, HFILL }},
+
+    {&hf_osen_rsn_cap_gtksa_replay_counter,
+     {"RSN GTKSA Replay Counter capabilities",
+                "wlan.osen.rsn.capabilities.gtksa_replay_counter",
+      FT_UINT16, BASE_HEX, VALS(rsn_cap_replay_counter), 0x0030, NULL, HFILL }},
+
+    {&hf_osen_group_management_cipher_suite_oui,
+     {"OSEN Group Management Cipher Suite OUI", "wlan.osen.gmcs.oui",
+      FT_UINT24, BASE_OUI, NULL, 0, NULL, HFILL }},
+
+    {&hf_osen_group_management_cipher_suite_type,
+     {"OSEN Group Management Cipher Suite Type", "wlan.osen.gmcs.type",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_osen_rsn_cap_mfpr,
+     {"Management Frame Protection Required", "wlan.osen.rsn.capabilities.mfpr",
+      FT_BOOLEAN, 16, TFS(&tfs_required_not_required), 0x0040, NULL, HFILL }},
+
+    {&hf_osen_rsn_cap_mfpc,
+     {"Management Frame Protection Capable", "wlan.osen.rsn.capabilities.mfpc",
+      FT_BOOLEAN, 16, TFS(&tfs_capable_not_capable), 0x0080, NULL, HFILL }},
+
+    {&hf_osen_rsn_cap_jmr,
+     {"Joint Multi-band RSNA", "wlan.osen.rsn.capabilities.jmr",
+      FT_BOOLEAN, 16, TFS(&tfs_supported_not_supported), 0x0100, NULL, HFILL }},
+
+    {&hf_osen_rsn_cap_peerkey,
+     {"PeerKey Enabled", "wlan.osen.rsn.capabilities.peerkey",
+      FT_BOOLEAN, 16, TFS(&tfs_enabled_disabled), 0x200, NULL, HFILL }},
+
+    {&hf_osen_rsn_cap_flags,
+     {"RSN Capability Flags", "wlan.osen.rsn.cabailities.flags",
+      FT_UINT16, BASE_HEX, NULL, 0, NULL, HFILL }},
+
+    {&hf_osen_rsn_spp_a_msdu_capable,
+     {"SPP A-MSDU Capable", "wlan.osen.rsn.capabilities.spp_a_msdu_cap",
+      FT_BOOLEAN, 16, TFS(&tfs_capable_not_capable), 0x0400, NULL, HFILL }},
+
+    {&hf_osen_rsn_spp_a_msdu_required,
+     {"SPP A-MSDU Required", "wlan.osen.rsn.capabilities.spp_a_msdu_req",
+      FT_BOOLEAN, 16, TFS(&tfs_required_not_required), 0x0800, NULL, HFILL }},
+
+    {&hf_osen_rsn_pbac,
+     {"Protected Block Ack Agreement Capable", "wlan.osen.rsn.capabilities.pbac",
+      FT_BOOLEAN, 16, TFS(&tfs_capable_not_capable), 0x1000, NULL, HFILL }},
+
+    {&hf_osen_extended_key_id_iaf,
+     {"Extended Key ID for Individually Addressed Frames",
+                "wlan.osn.rsn.extended_key_id_iaf",
+      FT_BOOLEAN, 16, TFS(&tfs_supported_not_supported), 0x2000, NULL, HFILL }},
+
+    {&hf_osen_reserved,
+     {"Reserved", "wlan.osen.rsn.capabilities.reserved",
+      FT_UINT16, BASE_HEX, NULL, 0xC000, NULL, HFILL }},
+
+    {&hf_osen_pmkid_count,
+     {"OSEN PMKID Count", "wlan.osen.pmkid.count",
+      FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+
+    {&hf_osen_pmkid,
+     {"OSEN PKMID", "wlan.osen.pmkid.bytes",
+      FT_BYTES, BASE_NONE, NULL, 0, NULL, HFILL }},
+
     /* RIC Descriptor IE: 802.11-2012: 8.4.2.53 */
     {&hf_ieee80211_tag_ric_desc_rsrc_type,
      {"Resource Type", "wlan.ric_desc.rsrc_type",
@@ -30616,6 +32412,14 @@ proto_register_ieee80211(void)
      {"WNM-Sleep Interval", "wlan.wnm_sleep_mode.interval",
       FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL }},
 
+    {&hf_ieee80211_wnm_sub_elt_id,
+     {"Subelement ID", "wlan.wnm_subelt.id",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
+    {&hf_ieee80211_wnm_sub_elt_len,
+     {"Subelement len", "wlan.wnm_subelt.len",
+      FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }},
+
     /* Time Advertisement */
     {&hf_ieee80211_tag_time_adv_timing_capab,
      {"Timing capabilities", "wlan.time_adv.timing_capab",
@@ -30717,7 +32521,7 @@ proto_register_ieee80211(void)
     /* QoS Map Set element */
     {&hf_ieee80211_tag_qos_map_set_dscp_exc,
      {"DSCP Exception", "wlan.qos_map_set.dscp_exception",
-      FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
+      FT_UINT16, BASE_HEX, NULL, 0, NULL, HFILL }},
 
     {&hf_ieee80211_tag_qos_map_set_dscp_exc_val,
      {"DSCP Value", "wlan.qos_map_set.dscp_value",
@@ -30731,7 +32535,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_tag_qos_map_set_range,
      {"DSCP Range description", "wlan.qos_map_set.range",
-      FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
+      FT_UINT16, BASE_HEX, NULL, 0, NULL, HFILL }},
 
     {&hf_ieee80211_tag_qos_map_set_low,
      {"DSCP Low Value", "wlan.qos_map_set.dscp_low_value",
@@ -31400,36 +33204,196 @@ proto_register_ieee80211(void)
      {"Reserved", "wlan.ext_tag.he_phy_cap.nbytes.reserved_b70_b71",
       FT_UINT16, BASE_HEX, NULL, 0xC000, NULL, HFILL }},
 
-    {&hf_he_mcs_max_he_mcs_1_ss,
-     {"Max HE-MCS for 1 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_for_1_ss",
+    {&hf_he_mcs_max_he_mcs_80_rx_1_ss,
+     {"Max HE-MCS for 1 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_rx_1_ss",
       FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0003, NULL, HFILL }},
 
-    {&hf_he_mcs_max_he_mcs_2_ss,
-     {"Max HE-MCS for 2 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_for_2_ss",
+    {&hf_he_mcs_max_he_mcs_80_rx_2_ss,
+     {"Max HE-MCS for 2 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_rx_2_ss",
       FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x000C, NULL, HFILL }},
 
-    {&hf_he_mcs_max_he_mcs_3_ss,
-     {"Max HE-MCS for 3 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_for_3_ss",
+    {&hf_he_mcs_max_he_mcs_80_rx_3_ss,
+     {"Max HE-MCS for 3 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_rx_3_ss",
       FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0030, NULL, HFILL }},
 
-    {&hf_he_mcs_max_he_mcs_4_ss,
-     {"Max HE-MCS for 4 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_for_4_ss",
+    {&hf_he_mcs_max_he_mcs_80_rx_4_ss,
+     {"Max HE-MCS for 4 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_rx_4_ss",
       FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x00C0, NULL, HFILL }},
 
-    {&hf_he_mcs_max_he_mcs_5_ss,
-     {"Max HE-MCS for 5 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_for_5_ss",
+    {&hf_he_mcs_max_he_mcs_80_rx_5_ss,
+     {"Max HE-MCS for 5 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_rx_5_ss",
       FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0300, NULL, HFILL }},
 
-    {&hf_he_mcs_max_he_mcs_6_ss,
-     {"Max HE-MCS for 6 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_for_6_ss",
+    {&hf_he_mcs_max_he_mcs_80_rx_6_ss,
+     {"Max HE-MCS for 6 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_rx_6_ss",
       FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0C00, NULL, HFILL }},
 
-    {&hf_he_mcs_max_he_mcs_7_ss,
-     {"Max HE-MCS for 7 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_for_7_ss",
+    {&hf_he_mcs_max_he_mcs_80_rx_7_ss,
+     {"Max HE-MCS for 7 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_rx_7_ss",
       FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x3000, NULL, HFILL }},
 
-    {&hf_he_mcs_max_he_mcs_8_ss,
-     {"Max HE-MCS for 8 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_for_8_ss",
+    {&hf_he_mcs_max_he_mcs_80_rx_8_ss,
+     {"Max HE-MCS for 8 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_rx_8_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0xC000, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80_tx_1_ss,
+     {"Max HE-MCS for 1 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_tx_1_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0003, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80_tx_2_ss,
+     {"Max HE-MCS for 2 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_tx_2_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x000C, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80_tx_3_ss,
+     {"Max HE-MCS for 3 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_tx_3_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0030, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80_tx_4_ss,
+     {"Max HE-MCS for 4 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_tx_4_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x00C0, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80_tx_5_ss,
+     {"Max HE-MCS for 5 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_tx_5_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0300, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80_tx_6_ss,
+     {"Max HE-MCS for 6 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_tx_6_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0C00, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80_tx_7_ss,
+     {"Max HE-MCS for 7 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_tx_7_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x3000, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80_tx_8_ss,
+     {"Max HE-MCS for 8 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80_tx_8_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0xC000, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_rx_1_ss,
+     {"Max HE-MCS for 1 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_rx_1_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0003, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_rx_2_ss,
+     {"Max HE-MCS for 2 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_rx_2_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x000C, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_rx_3_ss,
+     {"Max HE-MCS for 3 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_rx_3_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0030, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_rx_4_ss,
+     {"Max HE-MCS for 4 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_rx_4_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x00C0, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_rx_5_ss,
+     {"Max HE-MCS for 5 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_rx_5_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0300, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_rx_6_ss,
+     {"Max HE-MCS for 6 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_rx_6_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0C00, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_rx_7_ss,
+     {"Max HE-MCS for 7 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_rx_7_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x3000, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_rx_8_ss,
+     {"Max HE-MCS for 8 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_rx_8_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0xC000, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_tx_1_ss,
+     {"Max HE-MCS for 1 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_tx_1_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0003, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_tx_2_ss,
+     {"Max HE-MCS for 2 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_tx_2_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x000C, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_tx_3_ss,
+     {"Max HE-MCS for 3 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_tx_3_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0030, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_tx_4_ss,
+     {"Max HE-MCS for 4 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_tx_4_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x00C0, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_tx_5_ss,
+     {"Max HE-MCS for 5 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_tx_5_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0300, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_tx_6_ss,
+     {"Max HE-MCS for 6 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_tx_6_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0C00, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_tx_7_ss,
+     {"Max HE-MCS for 7 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_tx_7_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x3000, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_80p80_tx_8_ss,
+     {"Max HE-MCS for 8 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_80p80_tx_8_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0xC000, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_rx_1_ss,
+     {"Max HE-MCS for 1 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_rx_1_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0003, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_rx_2_ss,
+     {"Max HE-MCS for 2 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_rx_2_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x000C, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_rx_3_ss,
+     {"Max HE-MCS for 3 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_rx_3_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0030, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_rx_4_ss,
+     {"Max HE-MCS for 4 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_rx_4_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x00C0, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_rx_5_ss,
+     {"Max HE-MCS for 5 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_rx_5_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0300, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_rx_6_ss,
+     {"Max HE-MCS for 6 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_rx_6_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0C00, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_rx_7_ss,
+     {"Max HE-MCS for 7 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_rx_7_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x3000, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_rx_8_ss,
+     {"Max HE-MCS for 8 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_rx_8_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0xC000, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_tx_1_ss,
+     {"Max HE-MCS for 1 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_tx_1_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0003, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_tx_2_ss,
+     {"Max HE-MCS for 2 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_tx_2_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x000C, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_tx_3_ss,
+     {"Max HE-MCS for 3 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_tx_3_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0030, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_tx_4_ss,
+     {"Max HE-MCS for 4 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_tx_4_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x00C0, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_tx_5_ss,
+     {"Max HE-MCS for 5 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_tx_5_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0300, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_tx_6_ss,
+     {"Max HE-MCS for 6 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_tx_6_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x0C00, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_tx_7_ss,
+     {"Max HE-MCS for 7 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_tx_7_ss",
+      FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0x3000, NULL, HFILL }},
+
+    {&hf_he_mcs_max_he_mcs_160_tx_8_ss,
+     {"Max HE-MCS for 8 SS", "wlan.ext_tag.he_mcs_map.max_he_mcs_160_tx_8_ss",
       FT_UINT16, BASE_HEX, VALS(he_mcs_map_vals), 0xC000, NULL, HFILL }},
 
     {&hf_he_rx_he_mcs_map_lte_80,
@@ -31721,6 +33685,8 @@ proto_register_ieee80211(void)
     &ett_block_ack_tid,
     &ett_block_ack_request_control,
     &ett_block_ack_bitmap,
+    &ett_block_ack_request_multi_sta_aid_tid,
+    &ett_multi_sta_block_ack,
     &ett_ath_cap_tree,
 
     &ett_80211_mgt,
@@ -31772,6 +33738,13 @@ proto_register_ieee80211(void)
     &ett_htc_he_a_control,
     &ett_mfb_subtree,
     &ett_lac_subtree,
+    &ett_ieee80211_umrs_control,
+    &ett_ieee80211_om_control,
+    &ett_ieee80211_hla_control,
+    &ett_ieee80211_buffer_status_report,
+    &ett_ieee80211_control_uph,
+    &ett_ieee80211_bqr_control,
+    &ett_ieee80211_control_cci,
 
     &ett_vht_cap_tree,
     &ett_vht_mcsset_tree,
@@ -31783,6 +33756,7 @@ proto_register_ieee80211(void)
 
     &ett_vht_ndp_annc,
     &ett_vht_ndp_annc_sta_info_tree,
+    &ett_vht_ndp_annc_sta_list,
 
     &ett_he_mimo_control,
 
@@ -31870,6 +33844,21 @@ proto_register_ieee80211(void)
 
     &ett_fcs,
 
+    &ett_hs20_osu_providers_list,
+    &ett_hs20_osu_provider_tree,
+    &ett_hs20_friendly_names_list,
+    &ett_hs20_friendly_name_tree,
+    &ett_hs20_osu_provider_method_list,
+    &ett_osu_icons_avail_list,
+    &ett_hs20_osu_icon_tree,
+    &ett_hs20_osu_service_desc_list,
+    &ett_hs20_osu_service_desc_tree,
+    &ett_hs20_venue_url,
+    &ett_hs20_advice_of_charge,
+    &ett_hs20_aoc_plan,
+
+    &ett_hs20_ofn_tree,
+
     &ett_adv_proto,
     &ett_adv_proto_tuple,
     &ett_gas_query,
@@ -31878,6 +33867,15 @@ proto_register_ieee80211(void)
     &ett_nai_realm_eap,
     &ett_tag_ric_data_desc_ie,
     &ett_anqp_vendor_capab,
+
+    &ett_osen_group_data_cipher_suite,
+    &ett_osen_pairwise_cipher_suites,
+    &ett_osen_pairwise_cipher_suite,
+    &ett_osen_akm_cipher_suites,
+    &ett_osen_akm_cipher_suite,
+    &ett_osen_rsn_cap_tree,
+    &ett_osen_pmkid_list,
+    &ett_osen_pmkid_tree,
 
     &ett_hs20_cc_proto_port_tuple,
 
@@ -31954,6 +33952,7 @@ proto_register_ieee80211(void)
     &ett_he_ndp_annc_sta_list,
     &ett_he_ndp_annc_sta_item,
     &ett_he_ndp_annc_sta_info,
+    &ett_ieee80211_3gpp_plmn,
   };
 
   static ei_register_info ei[] = {
@@ -32117,6 +34116,9 @@ proto_register_ieee80211(void)
   proto_register_field_array(proto_aggregate, aggregate_fields, array_length(aggregate_fields));
 
   proto_wlan = proto_register_protocol("IEEE 802.11 wireless LAN", "IEEE 802.11", "wlan");
+
+  heur_subdissector_list = register_heur_dissector_list("wlan_data", proto_wlan);
+
   /* Created to remove Decode As confusion */
   proto_centrino = proto_register_protocol("IEEE 802.11 wireless LAN (Centrino)", "IEEE 802.11 (Centrino)", "wlan_centrino");
   proto_register_field_array(proto_wlan, hf, array_length(hf));
@@ -32388,30 +34390,30 @@ proto_reg_handoff_ieee80211(void)
   capture_dissector_add_uint("ppi", 105 /* DLT_DLT_IEEE802_11 */, ieee80211_cap_handle);
 
   /* Register handoff to Aruba GRE */
-  dissector_add_uint("gre.proto", GRE_ARUBA_8200, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8210, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8220, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8230, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8240, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8250, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8260, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8270, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8280, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8290, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_82A0, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_82B0, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_82C0, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_82D0, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_82E0, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_82F0, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8300, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8310, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8320, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8330, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8340, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8350, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8360, ieee80211_handle);
-  dissector_add_uint("gre.proto", GRE_ARUBA_8370, ieee80211_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8200, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8210, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8220, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8230, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8240, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8250, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8260, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8270, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8280, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8290, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_82A0, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_82B0, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_82C0, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_82D0, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_82E0, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_82F0, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8300, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8310, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8320, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8330, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8340, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8350, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8360, wlan_withoutfcs_handle);
+  dissector_add_uint("gre.proto", GRE_ARUBA_8370, wlan_withoutfcs_handle);
 
   data_encap_handle = create_dissector_handle(dissect_data_encap, proto_wlan);
   dissector_add_uint("ethertype", ETHERTYPE_IEEE80211_DATA_ENCAP,
@@ -32558,7 +34560,10 @@ proto_reg_handoff_ieee80211(void)
 
   dissector_add_uint("wlan.anqp.vendor_specific", OUI_WFA, create_dissector_handle(dissect_vendor_wifi_alliance_anqp, -1));
   dissector_add_uint("wlan.anqp.wifi_alliance.subtype", WFA_SUBTYPE_HS20_ANQP, create_dissector_handle(dissect_hs20_anqp, -1));
+  dissector_add_uint("wlan.ie.wifi_alliance.subtype", WFA_SUBTYPE_SUBSCRIPTION_REMEDIATION, create_dissector_handle(dissect_hs20_subscription_remediation, -1));
+  dissector_add_uint("wlan.ie.wifi_alliance.subtype", WFA_SUBTYPE_DEAUTHENTICATION_IMMINENT, create_dissector_handle(dissect_hs20_deauthentication_imminent, -1));
   dissector_add_uint("wlan.ie.wifi_alliance.subtype", WFA_SUBTYPE_HS20_INDICATION, create_dissector_handle(dissect_hs20_indication, -1));
+  dissector_add_uint("wlan.ie.wifi_alliance.subtype", WFA_SUBTYPE_OSEN, create_dissector_handle(dissect_hs20_osen, -1));
 }
 
 /*

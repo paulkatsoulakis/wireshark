@@ -5,7 +5,7 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0+
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
 #include <ui/qt/models/coloring_rules_delegate.h>
@@ -87,6 +87,7 @@ void ColoringRulesDelegate::setModelData(QWidget *editor, QAbstractItemModel *mo
         if ((displayEdit->syntaxState() == SyntaxLineEdit::Invalid) &&
             (model->data(model->index(index.row(), ColoringRulesModel::colName), Qt::CheckStateRole) == Qt::Checked))
         {
+            model->setData(model->index(index.row(), ColoringRulesModel::colName), Qt::Unchecked, Qt::CheckStateRole);
             emit invalidField(index, displayEdit->syntaxErrorMessage());
         }
         else

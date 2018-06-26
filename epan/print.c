@@ -20,6 +20,7 @@
 #include <epan/epan_dissect.h>
 #include <epan/to_str.h>
 #include <epan/expert.h>
+#include <epan/column.h>
 #include <epan/column-info.h>
 #include <epan/color_filters.h>
 #include <epan/prefs.h>
@@ -29,7 +30,6 @@
 #include <version_info.h>
 #include <wsutil/utf8_entities.h>
 #include <ftypes/ftypes-int.h>
-#include <wsutil/glib-compat.h>
 
 #define PDML_VERSION "0"
 #define PSML_VERSION "0"
@@ -1165,6 +1165,7 @@ write_ek_summary(column_info *cinfo, FILE *fh)
     gint i;
 
     for (i = 0; i < cinfo->num_cols; i++) {
+        if (!get_column_visible(i)) continue;
         fputs(", \"", fh);
         print_escaped_ek(fh, g_ascii_strdown(cinfo->columns[i].col_title, -1));
         fputs("\": \"", fh);
@@ -1559,6 +1560,7 @@ write_psml_preamble(column_info *cinfo, FILE *fh)
     fprintf(fh, "<structure>\n");
 
     for (i = 0; i < cinfo->num_cols; i++) {
+        if (!get_column_visible(i)) continue;
         fprintf(fh, "<section>");
         print_escaped_xml(fh, cinfo->columns[i].col_title);
         fprintf(fh, "</section>\n");
@@ -1583,6 +1585,7 @@ write_psml_columns(epan_dissect_t *edt, FILE *fh, gboolean use_color)
     }
 
     for (i = 0; i < edt->pi.cinfo->num_cols; i++) {
+        if (!get_column_visible(i)) continue;
         fprintf(fh, "<section>");
         print_escaped_xml(fh, edt->pi.cinfo->columns[i].col_data);
         fprintf(fh, "</section>\n");
@@ -1634,8 +1637,10 @@ write_csv_column_titles(column_info *cinfo, FILE *fh)
 {
     gint i;
 
-    for (i = 0; i < cinfo->num_cols - 1; i++)
+    for (i = 0; i < cinfo->num_cols - 1; i++) {
+        if (!get_column_visible(i)) continue;
         csv_write_str(cinfo->columns[i].col_title, ',', fh);
+    }
     csv_write_str(cinfo->columns[i].col_title, '\n', fh);
 }
 
@@ -1644,8 +1649,10 @@ write_csv_columns(epan_dissect_t *edt, FILE *fh)
 {
     gint i;
 
-    for (i = 0; i < edt->pi.cinfo->num_cols - 1; i++)
+    for (i = 0; i < edt->pi.cinfo->num_cols - 1; i++) {
+        if (!get_column_visible(i)) continue;
         csv_write_str(edt->pi.cinfo->columns[i].col_data, ',', fh);
+    }
     csv_write_str(edt->pi.cinfo->columns[i].col_data, '\n', fh);
 }
 
@@ -2311,7 +2318,7 @@ void write_fields_preamble(output_fields_t* fields, FILE *fh)
     fputc('\n', fh);
 }
 
-static void format_field_values(output_fields_t* fields, gpointer field_index, const gchar* value)
+static void format_field_values(output_fields_t* fields, gpointer field_index, gchar* value)
 {
     guint      indx;
     GPtrArray* fv_p;
@@ -2334,17 +2341,36 @@ static void format_field_values(output_fields_t* fields, gpointer field_index, c
     switch (fields->occurrence) {
     case 'f':
         /* print the value of only the first occurrence of the field */
-        if (g_ptr_array_len(fv_p) != 0)
+        if (g_ptr_array_len(fv_p) != 0) {
+            /*
+             * This isn't the first occurrence, so the value won't be used;
+             * free it.
+             */
+            g_free(value);
             return;
+        }
         break;
     case 'l':
         /* print the value of only the last occurrence of the field */
-        g_ptr_array_set_size(fv_p, 0);
+        if (g_ptr_array_len(fv_p) != 0) {
+            /*
+             * This isn't the first occurrence, so there's already a
+             * value in the array, which won't be used; free the
+             * first (only) element in the array, and then remove
+             * it - this value will replace it.
+             */
+            g_free(g_ptr_array_index(fv_p, 0));
+            g_ptr_array_set_size(fv_p, 0);
+        }
         break;
     case 'a':
         /* print the value of all accurrences of the field */
-        /* If not the first, add the 'aggregator' */
-        if (g_ptr_array_len(fv_p) > 0) {
+        if (g_ptr_array_len(fv_p) != 0) {
+            /*
+             * This isn't the first occurrence. so add the "aggregator"
+             * character as a separator between the previous element
+             * and this element.
+             */
             g_ptr_array_add(fv_p, (gpointer)g_strdup_printf("%c", fields->aggregator));
         }
         break;
@@ -2430,6 +2456,7 @@ static void write_specified_fields(fields_format format, output_fields_t *fields
     /* Add columns to fields */
     if (fields->includes_col_fields) {
         for (col = 0; col < cinfo->num_cols; col++) {
+            if (!get_column_visible(col)) continue;
             /* Prepend COLUMN_FIELD_FILTER as the field name */
             col_name = g_strdup_printf("%s%s", COLUMN_FIELD_FILTER, cinfo->columns[col].col_title);
             field_index = g_hash_table_lookup(fields->field_indicies, col_name);

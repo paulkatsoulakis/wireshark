@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "packet_list_record.h"
 
@@ -72,7 +73,7 @@ const QByteArray PacketListRecord::columnString(capture_file *cap_file, int colu
 
 void PacketListRecord::resetColumns(column_info *cinfo)
 {
-    col_data_ver_++;
+    invalidateAllRecords();
 
     if (!cinfo) {
         return;

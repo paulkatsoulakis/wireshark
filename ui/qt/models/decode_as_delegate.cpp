@@ -5,7 +5,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "decode_as_delegate.h"
 
@@ -266,7 +267,7 @@ QWidget* DecodeAsDelegate::createEditor(QWidget *parentWidget, const QStyleOptio
 
         //QMap already sorts the keys (protocols) alphabetically
         QMap<QString, dissector_info_t*>::iterator protocol;
-        for(protocol = protocols.begin(); protocol != protocols.end(); protocol++)
+        for(protocol = protocols.begin(); protocol != protocols.end(); ++protocol)
         {
             editor->addItem(protocol.key(), VariantPointer<dissector_info_t>::asQVariant(protocol.value()));
         }
@@ -295,28 +296,14 @@ void DecodeAsDelegate::setEditorData(QWidget *editor, const QModelIndex &index) 
         {
         QComboBox *combobox = static_cast<QComboBox *>(editor);
         const QString &data = index.model()->data(index, Qt::EditRole).toString();
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
         combobox->setCurrentText(data);
-#else
-        int new_index = combobox->findText(data);
-        if (new_index >= 0) {
-            combobox->setCurrentIndex(new_index);
-        }
-#endif
         }
         break;
     case DecodeAsModel::colSelector:
         if (isSelectorCombo(item)) {
             QComboBox *combobox = static_cast<QComboBox *>(editor);
             const QString &data = index.model()->data(index, Qt::EditRole).toString();
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
             combobox->setCurrentText(data);
-#else
-            int new_index = combobox->findText(data);
-            if (new_index >= 0) {
-                combobox->setCurrentIndex(new_index);
-            }
-#endif
         }
         else {
             QStyledItemDelegate::setEditorData(editor, index);

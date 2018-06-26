@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <algorithm>
 
@@ -134,6 +135,13 @@ void PacketListModel::clear() {
     max_row_height_ = 0;
     max_line_count_ = 1;
     idle_dissection_row_ = 0;
+}
+
+void PacketListModel::invalidateAllColumnStrings()
+{
+    PacketListRecord::invalidateAllRecords();
+    dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1));
+    headerDataChanged(Qt::Horizontal, 0, columnCount() - 1);
 }
 
 void PacketListModel::resetColumns()

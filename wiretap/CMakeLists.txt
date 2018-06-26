@@ -4,19 +4,7 @@
 # By Gerald Combs <gerald@wireshark.org>
 # Copyright 1998 Gerald Combs
 #
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+# SPDX-License-Identifier: GPL-2.0-or-later
 #
 
 include(UseABICheck)
@@ -45,6 +33,7 @@ set(WIRETAP_NONGENERATED_FILES
 	csids.c
 	daintree-sna.c
 	dbs-etherwatch.c
+	dpa400.c
 	dct3trace.c
 	erf.c
 	eyesdn.c
@@ -79,8 +68,10 @@ set(WIRETAP_NONGENERATED_FILES
 	pcapng.c
 	peekclassic.c
 	peektagged.c
+	pem.c
 	pppdump.c
 	radcom.c
+	ruby_marshal.c
 	snoop.c
 	stanag4607.c
 	tnef.c
@@ -127,20 +118,25 @@ add_library(wiretap
 
 add_dependencies(wiretap version)
 
-set(FULL_SO_VERSION "0.0.0")
-
 set_target_properties(wiretap PROPERTIES
 	PREFIX "lib"
 	COMPILE_DEFINITIONS "WS_BUILD_DLL"
 	LINK_FLAGS "${WS_LINK_FLAGS}"
-	VERSION ${FULL_SO_VERSION} SOVERSION 0
+	VERSION "0.0.0" SOVERSION 0
 	FOLDER "DLLs"
 )
 
 if(ENABLE_APPLICATION_BUNDLE)
-	set_target_properties(wiretap PROPERTIES
-		LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/run/Wireshark.app/Contents/Frameworks
-	)
+	if(NOT CMAKE_CFG_INTDIR STREQUAL ".")
+		# Xcode
+		set_target_properties(wiretap PROPERTIES
+			LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/run/$<CONFIG>/Wireshark.app/Contents/Frameworks
+		)
+	else()
+		set_target_properties(wiretap PROPERTIES
+			LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/run/Wireshark.app/Contents/Frameworks
+		)
+	endif()
 endif()
 
 ABICHECK(libwiretap)

@@ -21,9 +21,9 @@
 #ifdef HAVE_LIBSMI
 #include <epan/oids.h>
 #endif
-#ifdef HAVE_GEOIP
-#include <epan/geoip_db.h>
-#endif
+
+#include <epan/maxmind_db.h>
+
 #ifdef HAVE_LUA
 #include <epan/wslua/init_wslua.h>
 #endif
@@ -248,16 +248,18 @@ FolderListModel::FolderListModel(QObject * parent):
     foreach(QString path, extPaths)
         appendRow( QStringList() << tr("Extcap path") << path.trimmed() << tr("Extcap Plugins search path"));
 
-#ifdef HAVE_GEOIP
-    /* GeoIP */
-    QStringList geoIpPaths = QString(geoip_db_get_paths()).split(G_SEARCHPATH_SEPARATOR_S);
-    foreach(QString path, geoIpPaths)
-        appendRow( QStringList() << tr("GeoIP path") << path.trimmed() << tr("GeoIP database search path"));
+#ifdef HAVE_MAXMINDDB
+    /* MaxMind DB */
+    QStringList maxMindDbPaths = QString(maxmind_db_get_paths()).split(G_SEARCHPATH_SEPARATOR_S);
+    foreach(QString path, maxMindDbPaths)
+        appendRow( QStringList() << tr("MaxMind DB path") << path.trimmed() << tr("MaxMind DB database search path"));
 #endif
 
 #ifdef HAVE_LIBSMI
     /* SMI MIBs/PIBs */
-    QStringList smiPaths = QString(oid_get_default_mib_path()).split(G_SEARCHPATH_SEPARATOR_S);
+    char *default_mib_path = oid_get_default_mib_path();
+    QStringList smiPaths = QString(default_mib_path).split(G_SEARCHPATH_SEPARATOR_S);
+    g_free(default_mib_path);
     foreach(QString path, smiPaths)
         appendRow( QStringList() << tr("MIB/PIB path") << path.trimmed() << tr("SMI MIB/PIB search path"));
 #endif
@@ -306,10 +308,10 @@ AboutDialog::AboutDialog(QWidget *parent) :
     /* Wireshark tab */
 
     /* Construct the message string */
-    message = "<p>Version " + vcs_version_info_str.toHtmlEscaped() + "</p>\n\n";
-    message += "<p>" + copyright_info_str.toHtmlEscaped() + "</p>\n\n";
-    message += "<p>" + comp_info_str.toHtmlEscaped() + "</p>\n\n";
-    message += "<p>" + runtime_info_str.toHtmlEscaped() + "</p>\n\n";
+    message = "<p>Version " + html_escape(vcs_version_info_str) + "</p>\n\n";
+    message += "<p>" + html_escape(copyright_info_str) + "</p>\n\n";
+    message += "<p>" + html_escape(comp_info_str) + "</p>\n\n";
+    message += "<p>" + html_escape(runtime_info_str) + "</p>\n\n";
     message += "<p>Wireshark is Open Source Software released under the GNU General Public License.</p>\n\n";
     message += "<p>Check the man page and http://www.wireshark.org for more information.</p>\n\n";
 

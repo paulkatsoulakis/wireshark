@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "uat_dialog.h"
 #include <ui_uat_dialog.h>
@@ -60,11 +61,7 @@ UatDialog::UatDialog(QWidget *parent, epan_uat *uat) :
     // very long filenames in the SSL RSA keys dialog, it also results in a
     // vertical scrollbar. Maybe remove this since the editor is not limited to
     // the column width (and overlays other fields if more width is needed)?
-#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
-    ui->uatTreeView->header()->setResizeMode(QHeaderView::ResizeToContents);
-#else
     ui->uatTreeView->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
-#endif
 
     // start editing as soon as the field is selected or when typing starts
     ui->uatTreeView->setEditTriggers(ui->uatTreeView->editTriggers() |
@@ -73,6 +70,9 @@ UatDialog::UatDialog(QWidget *parent, epan_uat *uat) :
     // Need to add uat_move or uat_insert to the UAT API.
     ui->uatTreeView->setDragEnabled(false);
     qDebug() << "FIX Add drag reordering to UAT dialog";
+
+    // Do NOT start editing the first column for the first item
+    ui->uatTreeView->setCurrentIndex(QModelIndex());
 }
 
 UatDialog::~UatDialog()

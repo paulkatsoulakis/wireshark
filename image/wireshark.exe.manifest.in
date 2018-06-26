@@ -36,8 +36,6 @@
            - The GetWindowsVersion parts of packaging\nsis\wireshark.nsi
            - The VersionNT parts of packaging\wix\Prerequisites.wxi
       -->
-      <!-- Windows Vista -->
-      <supportedOS Id="{e2011457-1546-43c5-a5fe-008deee3d3f0}"/>
       <!-- Windows 7 -->
       <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>
       <!-- Windows 8 -->
@@ -48,4 +46,17 @@
       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
     </application>
   </compatibility>
+  <!--
+    MSDN recommends setting our DPI awareness to PerMonitorV2 instead
+    of PerMonitor. Unfortunately that causes layout issues with Qt
+    5.6 and 5.9. For now enable PerMonitor DPI awareness by enabling
+    Qt::AA_EnableHighDpiScaling in ui/qt/main.cpp.
+  -->
+  <!--
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+    </windowsSettings>
+  </application>
+  -->
 </assembly>

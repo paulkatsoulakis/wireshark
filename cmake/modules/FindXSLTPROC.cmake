@@ -3,21 +3,29 @@
 # This module looks for some usual Unix commands.
 #
 
+include(FindChocolatey)
 include(FindCygwin)
 
 # Strawberry Perl ships with xsltproc but no DocBook XML files, which
 # is detrimental to our interests. Search for the Chocolatey and Cygwin
-# versions first.
+# versions first, and un-find xsltproc if needed.
 find_program(XSLTPROC_EXECUTABLE
   NAMES
     xsltproc
   HINTS
-    ${ChocolateyInstall}/bin
+    ${CHOCOLATEY_BIN_PATH}
     ${CYGWIN_INSTALL_PATH}/bin
   PATHS
     /usr/local/bin
     /sbin
 )
+
+string(TOLOWER ${XSLTPROC_EXECUTABLE} _xe_lower)
+if(${_xe_lower} MATCHES "strawberry")
+	set(_ignore_reason "Strawberry xsltproc found at ${XSLTPROC_EXECUTABLE}. Ignoring.")
+	message(STATUS ${_ignore_reason})
+	set(XSLTPROC_EXECUTABLE XSLTPROC_EXECUTABLE-NOTFOUND CACHE FILEPATH ${_ignore_reason} FORCE)
+endif()
 
 # Handle the QUIETLY and REQUIRED arguments and set XSLTPROC_FOUND to TRUE if
 # all listed variables are TRUE

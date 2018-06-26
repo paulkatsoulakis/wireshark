@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
@@ -289,6 +290,7 @@ void SyntaxLineEdit::completionKeyPressEvent(QKeyEvent *event)
         switch (event->key()) {
         case Qt::Key_Enter:
         case Qt::Key_Return:
+            break;
         case Qt::Key_Tab:
             focusNextChild();
             break;

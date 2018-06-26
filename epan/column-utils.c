@@ -41,6 +41,9 @@
 /* Used for locale decimal point */
 static char *col_decimal_point;
 
+/* Used to indicate updated column information, e.g. a new request/response. */
+static gboolean col_data_changed_;
+
 /* Allocate all the data structures for constructing column data, given
    the number of columns. */
 void
@@ -68,17 +71,10 @@ col_setup(column_info *cinfo, const gint num_cols)
 }
 
 static void
-col_custom_ids_free_wrapper(gpointer data, gpointer user_data _U_)
-{
-  g_free(data);
-}
-
-static void
 col_custom_fields_ids_free(GSList** custom_fields_id)
 {
   if (*custom_fields_id != NULL) {
-    g_slist_foreach(*custom_fields_id, col_custom_ids_free_wrapper, NULL);
-    g_slist_free(*custom_fields_id);
+    g_slist_free_full(*custom_fields_id, g_free);
   }
   *custom_fields_id = NULL;
 }
@@ -413,7 +409,7 @@ col_append_lstr(column_info *cinfo, const gint el, const gchar *str1, ...)
       va_start(ap, str1);
       str = str1;
       do {
-         if G_UNLIKELY(str == NULL)
+         if (G_UNLIKELY(str == NULL))
              str = "(null)";
 
          pos += g_strlcpy(&col_item->col_buf[pos], str, max_len - pos);
@@ -454,6 +450,15 @@ col_append_ports(column_info *cinfo, const gint col, port_type typ, guint16 src,
   col_snprint_port(buf_src, 32, typ, src);
   col_snprint_port(buf_dst, 32, typ, dst);
   col_append_lstr(cinfo, col, buf_src, " " UTF8_RIGHTWARDS_ARROW " ", buf_dst, COL_ADD_LSTR_TERMINATOR);
+}
+
+void
+col_append_frame_number(packet_info *pinfo, const gint col, const gchar *fmt_str, guint frame_num)
+{
+  col_append_fstr(pinfo->cinfo, col, fmt_str, frame_num);
+  if (!pinfo->fd->flags.visited) {
+    col_data_changed_ = TRUE;
+  }
 }
 
 static void
@@ -742,7 +747,7 @@ col_add_lstr(column_info *cinfo, const gint el, const gchar *str1, ...)
       va_start(ap, str1);
       str = str1;
       do {
-         if G_UNLIKELY(str == NULL)
+         if (G_UNLIKELY(str == NULL))
              str = "(null)";
 
          pos += g_strlcpy(&col_item->col_buf[pos], str, max_len - pos);
@@ -2282,6 +2287,11 @@ col_fill_in_error(column_info *cinfo, frame_data *fdata, const gboolean fill_col
   }
 }
 
+gboolean col_data_changed(void) {
+  gboolean cur_cdc = col_data_changed_;
+  col_data_changed_ = FALSE;
+  return cur_cdc;
+}
 /*
  * Editor modelines
  *

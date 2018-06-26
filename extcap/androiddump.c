@@ -73,6 +73,7 @@
     #endif
 #else
     #include "wiretap/wtap.h"
+    #include "wiretap/pcap-encap.h"
 #endif
 
 #ifdef ANDROIDDUMP_USE_LIBPCAP
@@ -124,6 +125,8 @@
 
 #define ADB_HEX4_FORMAT "%04zx"
 #define ADB_HEX4_LEN    4
+
+#define BTSNOOP_HDR_LEN 16
 
 enum exit_code {
     EXIT_CODE_SUCCESS = 0,
@@ -986,6 +989,7 @@ static int register_interfaces(extcap_parameters * extcap_conf, const char *adb_
     const char            *adb_ps_droid_bluetooth = "shell:ps droid.bluetooth";
     const char            *adb_ps_bluetooth_app   = "shell:ps com.android.bluetooth";
     const char            *adb_ps_with_grep       = "shell:ps | grep com.android.bluetooth";
+    const char            *adb_ps_all_with_grep   = "shell:ps -A | grep com.android.bluetooth";
     char                   serial_number[SERIAL_NUMBER_LENGTH_MAX];
     char                   model_name[MODEL_NAME_LENGTH_MAX];
     int                    result;
@@ -1122,7 +1126,7 @@ static int register_interfaces(extcap_parameters * extcap_conf, const char *adb_
             closesocket(sock);
             if (!response || data_length < 1) {
                 g_warning("Error while getting Bluetooth application process id by <%s> "
-                    "(%p len=%"G_GSSIZE_FORMAT")", adb_hcidump_version, (void*)response, data_length);
+                    "(%p len=%"G_GSSIZE_FORMAT")", adb_ps_droid_bluetooth, (void*)response, data_length);
                 g_debug( "Android Bluetooth application PID for %s is unknown", serial_number);
                 disable_interface = 1;
             } else {
@@ -1176,7 +1180,9 @@ static int register_interfaces(extcap_parameters * extcap_conf, const char *adb_
             const char* ps_cmd;
             disable_interface = 0;
 
-            if (api_level >= 24) {
+            if (api_level >= 26) {
+                ps_cmd = adb_ps_all_with_grep;
+            } else if (api_level >= 24) {
                 ps_cmd = adb_ps_with_grep;
             } else if (api_level >= 23) {
                 ps_cmd = adb_ps_bluetooth_app;
@@ -1191,7 +1197,7 @@ static int register_interfaces(extcap_parameters * extcap_conf, const char *adb_
 
             if (!response || data_length < 1) {
                 g_warning("Error while getting Bluetooth application process id by <%s> "
-                    "(%p len=%"G_GSSIZE_FORMAT")", adb_hcidump_version, (void*)response, data_length);
+                    "(%p len=%"G_GSSIZE_FORMAT")", ps_cmd, (void*)response, data_length);
                 g_debug("Android Bluetooth application PID for %s is unknown", serial_number);
                 disable_interface = 1;
             } else {
@@ -1225,11 +1231,15 @@ static int register_interfaces(extcap_parameters * extcap_conf, const char *adb_
                         disable_interface = 1;
                     } else {
                         response[data_length] = '\0';
-
-                        data_str = strchr(response, '\n');
-                        if (data_str && sscanf(data_str, "%*s %15s", pid) == 1 && strlen(pid) > 10 && strcmp(pid + 9, "22A8") == 0) {
-                            g_debug("Btsnoop Net Port for %s is %s", serial_number, pid + 9);
-                        } else {
+                        data_str = strtok(response, "\n");
+                        while (data_str != NULL) {
+                            if (data_str && sscanf(data_str, "%*s %15s", pid) == 1 && strlen(pid) > 10 && strcmp(pid + 9, "22A8") == 0) {
+                                g_debug("Btsnoop Net Port for %s is %s", serial_number, pid + 9);
+                                break;
+                            }
+                            data_str = strtok(NULL, "\n");
+                        }
+                        if (data_str == NULL) {
                             disable_interface = 1;
                             g_debug("Btsnoop Net Port for %s is unknown", serial_number);
                         }
@@ -1569,6 +1579,7 @@ static int capture_android_bluetooth_hcidump(char *interface, char *fifo,
                             date.tm_min, date.tm_sec, ms, direction_character);
                 date.tm_mon -= 1;
                 date.tm_year -= 1900;
+                date.tm_isdst = -1;
                 ts = mktime(&date);
 
                 new_hex_data = data + 29;
@@ -1919,20 +1930,15 @@ static int capture_android_bluetooth_btsnoop_net(char *interface, char *fifo,
     }
 
     /* Read "btsnoop" header - 16 bytes */
-    while (used_buffer_length < 16) {
-        length = recv(sock, packet + used_buffer_length,  (int)(PACKET_LENGTH - used_buffer_length), 0);
-
+    while (used_buffer_length < BTSNOOP_HDR_LEN) {
+        length = recv(sock, packet + used_buffer_length,  (int)(BTSNOOP_HDR_LEN - used_buffer_length), 0);
         if (length <= 0) {
             g_warning("Broken socket connection.");
             closesocket(sock);
             return EXIT_CODE_GENERIC;
         }
-
         used_buffer_length += length;
     }
-    if (used_buffer_length > 16)
-        memmove(packet, packet + 16, used_buffer_length - 16);
-
     used_buffer_length = 0;
 
     while (endless_loop) {
@@ -2124,6 +2130,7 @@ static int capture_android_logcat_text(char *interface, char *fifo,
             if (6 == sscanf(packet + exported_pdu_headers_size, "%d-%d %d:%d:%d.%d", &date->tm_mon, &date->tm_mday, &date->tm_hour,
                             &date->tm_min, &date->tm_sec, &ms)) {
                 date->tm_mon -= 1;
+                date->tm_isdst = -1;
                 seconds = mktime(date);
                 secs = (time_t) seconds;
                 nsecs = (int) (ms * 1e6);
@@ -2406,8 +2413,11 @@ static int capture_android_tcpdump(char *interface, char *fifo,
         closesocket(sock);
         return EXIT_CODE_GENERIC;
     }
-
-    extcap_dumper = extcap_dumper_open(fifo, (int) data[20]);
+    int encap = (int)data[20];
+#ifndef ANDROIDDUMP_USE_LIBPCAP
+    encap = wtap_pcap_encap_to_wtap_encap(encap);
+#endif
+    extcap_dumper = extcap_dumper_open(fifo, encap);
 
     used_buffer_length = 0;
     while (endless_loop) {

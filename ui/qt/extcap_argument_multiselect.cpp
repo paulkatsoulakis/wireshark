@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <extcap_argument.h>
 #include <extcap_argument_file.h>
@@ -25,8 +26,8 @@
 #include <extcap_parser.h>
 #include <extcap_argument_multiselect.h>
 
-ExtArgMultiSelect::ExtArgMultiSelect(extcap_arg * argument) :
-        ExtcapArgument(argument), treeView(0), viewModel(0) {}
+ExtArgMultiSelect::ExtArgMultiSelect(extcap_arg * argument, QObject *parent) :
+        ExtcapArgument(argument, parent), treeView(0), viewModel(0) {}
 
 ExtArgMultiSelect::~ExtArgMultiSelect()
 {

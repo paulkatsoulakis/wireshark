@@ -117,7 +117,7 @@ void proto_reg_handoff_mysql(void);
 #define MYSQL_RFSH_SLAVE   64  /* Reset master info and restart slave thread */
 #define MYSQL_RFSH_MASTER  128 /* Remove all bin logs in the index and truncate the index */
 
-/* MySQL command codes */
+/* MySQL command codes (enum_server_command in mysql-server.git:include/my_command.h) */
 #define MYSQL_SLEEP               0  /* not from client */
 #define MYSQL_QUIT                1
 #define MYSQL_INIT_DB             2
@@ -147,6 +147,10 @@ void proto_reg_handoff_mysql(void);
 #define MYSQL_STMT_RESET          26
 #define MYSQL_SET_OPTION          27
 #define MYSQL_STMT_FETCH          28
+#define MYSQL_DAEMON              29
+#define MYSQL_BINLOG_DUMP_GTID    30 /* replication */
+#define MYSQL_RESET_CONNECTION    31
+
 
 /* MySQL cursor types */
 
@@ -195,6 +199,7 @@ static const value_string mysql_command_vals[] = {
 	{MYSQL_STMT_RESET, "Reset Statement"},
 	{MYSQL_SET_OPTION, "Set Option"},
 	{MYSQL_STMT_FETCH, "Fetch Data"},
+	{MYSQL_BINLOG_DUMP_GTID, "Send Binlog GTID"},
 	{0, NULL}
 };
 static value_string_ext mysql_command_vals_ext = VALUE_STRING_EXT_INIT(mysql_command_vals);
@@ -1548,6 +1553,7 @@ mysql_dissect_request(tvbuff_t *tvb,packet_info *pinfo, int offset,
 		mysql_set_conn_state(pinfo, conn_data, RESPONSE_TABULAR);
 		break;
 
+	case MYSQL_BINLOG_DUMP_GTID:
 	case MYSQL_BINLOG_DUMP:
 		proto_tree_add_item(req_tree, hf_mysql_binlog_position, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 		offset += 4;
@@ -1963,7 +1969,7 @@ mysql_field_add_lestring(tvbuff_t *tvb, int offset, proto_tree *tree, int field)
 
 	offset += tvb_get_fle(tvb, offset, &lelen, &is_null);
 	if(is_null)
-		proto_tree_add_string(tree, field, tvb, offset, 4, "NULL");
+		proto_tree_add_string(tree, field, tvb, offset, 0, "NULL");
 	else
 	{
 		proto_tree_add_item(tree, field, tvb, offset, (int)lelen, ENC_NA);
@@ -2189,16 +2195,24 @@ tvb_get_fle(tvbuff_t *tvb, int offset, guint64 *res, guint8 *is_null)
 
 /* dissector helper: length of PDU */
 static guint
-get_mysql_pdu_len(packet_info *pinfo _U_, tvbuff_t *tvb, int offset, void *data _U_)
+get_mysql_pdu_len(packet_info *pinfo, tvbuff_t *tvb, int offset, void *data _U_)
 {
-	int tvb_remain= tvb_reported_length_remaining(tvb, offset);
-	guint plen= tvb_get_letoh24(tvb, offset);
+	/* Regular packet header: length (3) + sequence number (1) */
+	conversation_t	   *conversation;
+	mysql_conn_data_t  *conn_data;
+	guint		    len = 4 + tvb_get_letoh24(tvb, offset);
 
-	if ((tvb_remain - plen) == 7) {
-		return plen + 7; /* compressed header 3+1+3 (len+id+cmp_len) */
-	} else {
-		return plen + 4; /* regular header 3+1 (len+id) */
+	conversation = find_conversation_pinfo(pinfo, 0);
+	if (conversation) {
+		conn_data = (mysql_conn_data_t *)conversation_get_proto_data(conversation, proto_mysql);
+		if (conn_data && conn_data->compressed_state == MYSQL_COMPRESS_ACTIVE &&
+			pinfo->num > conn_data->frame_start_compressed) {
+			/* Compressed packet header includes uncompressed packet length (3) */
+			len += 3;
+		}
 	}
+
+	return len;
 }
 
 /* dissector main function: handle one PDU */

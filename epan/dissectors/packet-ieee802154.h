@@ -19,16 +19,17 @@
 /* PANID dissector list is for Decode-As and stateful dissection only. */
 #define IEEE802154_PROTOABBREV_WPAN_PANID   "wpan.panid"
 
-/* Dissector tables for the Header IEs and Payload IEs */
+/* Dissector tables */
 #define IEEE802154_HEADER_IE_DTABLE         "wpan.header_ie"
 #define IEEE802154_PAYLOAD_IE_DTABLE        "wpan.payload_ie"
 #define IEEE802154_MLME_IE_DTABLE           "wpan.mlme_ie"
+#define IEEE802154_CMD_VENDOR_DTABLE        "wpan.cmd.vendor"
 
 /*  Packet Overhead from MAC header + footer (excluding addressing) */
 #define IEEE802154_MAX_FRAME_LEN            127
 #define IEEE802154_FCS_LEN                  2
 
-/*  Command Frame Identifier Types Definions */
+/*  Command Frame Identifier Types Definitions */
 #define IEEE802154_CMD_ASSOC_REQ                0x01
 #define IEEE802154_CMD_ASSOC_RSP                0x02
 #define IEEE802154_CMD_DISASSOC_NOTIFY          0x03
@@ -55,7 +56,9 @@
 #define IEEE802154_CMD_RIT_DATA_REQ             0x20
 #define IEEE802154_CMD_DBS_REQ                  0x21
 #define IEEE802154_CMD_DBS_RSP                  0x22
-/* 0x22-0x1f reserved in IEEE802.15.4-2015 */
+#define IEEE802154_CMD_RIT_DATA_RSP             0x23
+#define IEEE802154_CMD_VENDOR_SPECIFIC          0x24
+/* 0x25-0xff reserved in IEEE802.15.4-2015 */
 
 /*  Definitions for Association Response Command */
 #define IEEE802154_CMD_ASRSP_AS_SUCCESS         0x00
@@ -305,8 +308,7 @@ typedef enum {
 #define IETF_6TOP_VERSION                0x0F
 #define IETF_6TOP_TYPE                   0x30
 #define IETF_6TOP_FLAGS_RESERVED         0xC0
-#define IETF_6TOP_SEQNUM                 0x0F
-#define IETF_6TOP_GEN                    0xF0
+#define IETF_6TOP_SEQNUM                 0xFF
 
 /* SIXTOP CMD and RC identifiers */
 #define IETF_6TOP_CMD_ADD              0x01
@@ -314,17 +316,18 @@ typedef enum {
 #define IETF_6TOP_CMD_RELOCATE         0x03
 #define IETF_6TOP_CMD_COUNT            0x04
 #define IETF_6TOP_CMD_LIST             0x05
-#define IETF_6TOP_CMD_CLEAR            0x06
+#define IETF_6TOP_CMD_SIGNAL           0x06
+#define IETF_6TOP_CMD_CLEAR            0x07
 #define IETF_6TOP_RC_SUCCESS           0x00
-#define IETF_6TOP_RC_ERROR             0x01
-#define IETF_6TOP_RC_EOL               0x02
+#define IETF_6TOP_RC_EOL               0x01
+#define IETF_6TOP_RC_ERR               0x02
 #define IETF_6TOP_RC_RESET             0x03
-#define IETF_6TOP_RC_VER_ERR           0x04
-#define IETF_6TOP_RC_SFID_ERR          0x05
-#define IETF_6TOP_RC_GEN_ERR           0x06
-#define IETF_6TOP_RC_BUSY              0x07
-#define IETF_6TOP_RC_NORES             0x08
-#define IETF_6TOP_RC_CELLLIST_ERR      0x09
+#define IETF_6TOP_RC_ERR_VERSION       0x04
+#define IETF_6TOP_RC_ERR_SFID          0x05
+#define IETF_6TOP_RC_ERR_SEQNUM        0x06
+#define IETF_6TOP_RC_ERR_CELLLIST      0x07
+#define IETF_6TOP_RC_ERR_BUSY          0x08
+#define IETF_6TOP_RC_ERR_LOCKED        0x09
 
 /* SIXTOP Message Types */
 #define IETF_6TOP_TYPE_REQUEST         0x00
@@ -380,7 +383,7 @@ typedef struct {
     gboolean    seqno_suppression;
     gboolean    ie_present;
     guint8      seqno;
-    /* determined during processing of Header IE*/
+    /* Determined during processing of Header IE*/
     gboolean    payload_ie_present;
     /* Addressing Info. */
     guint16     dst_pan;
@@ -453,7 +456,7 @@ typedef enum {
     DECRYPT_PACKET_NO_KEY,
     DECRYPT_PACKET_DECRYPT_FAILED,
     DECRYPT_PACKET_MIC_CHECK_FAILED
-} ws_decrypt_status;
+} ieee802154_decrypt_status;
 
 /* UAT key structure. */
 typedef struct {
@@ -476,24 +479,82 @@ gboolean ccm_cbc_mac(const gchar *key, const gchar *iv, const gchar *a, gint a_l
 proto_tree *ieee802154_create_hie_tree(tvbuff_t *tvb, proto_tree *tree, int hf, gint ett);
 proto_tree *ieee802154_create_pie_tree(tvbuff_t *tvb, proto_tree *tree, int hf, gint ett);
 
+
+/** Even if the FCF Security Enabled flag is set, there is no auxiliary security header present (used by Wi-SUN Netricity) */
+#define IEEE802154_DISSECT_HEADER_OPTION_NO_AUX_SEC_HDR  (1 << 1)
+/**
+ * Dissect the IEEE 802.15.4 header starting from the FCF up to and including the Header IEs (the non-encrypted part)
+ * @param tvb the IEEE 802.15.4 frame
+ * @param pinfo packet info of the currently processed packet
+ * @param tree current protocol tree
+ * @param options bitmask of IEEE802154_DISSECT_HEADER_OPTION_XX flags
+ * @param[out] created_header_tree will be set to the tree created for the header
+ * @param[out] parsed_info will be set to the (wmem allocated) IEEE 802.15.4 packet information
+ * @return the MHR length or 0 if an error occurred
+ */
+guint ieee802154_dissect_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint options, proto_tree **created_header_tree, ieee802154_packet **parsed_info);
+
+/**
+ * Decrypt the IEEE 802.15.4 payload starting from the Payload IEs
+ *
+ * If the packet is not encrypted, just return the payload.
+ * @param tvb the IEEE 802.15.4 frame
+ * @param mhr_len the size of the IEEE 802.15.4 header (MHR)
+ * @param pinfo packet info of the currently processed packet
+ * @param ieee802154_tree the tree for the IEEE 802.15.4 header/protocol
+ * @param packet the IEEE 802.15.4 packet information
+ * @return the plaintext payload or NULL if decryption failed
+ */
+tvbuff_t* ieee802154_decrypt_payload(tvbuff_t *tvb, guint mhr_len, packet_info *pinfo, proto_tree *ieee802154_tree, ieee802154_packet *packet);
+
+/**
+ * Dissect the IEEE 802.15.4 Payload IEs (if present)
+ * @param tvb the (decrypted) IEEE 802.15.4 payload
+ * @param pinfo packet info of the currently processed packet
+ * @param ieee802154_tree the tree for the IEEE 802.15.4 header/protocol
+ * @param packet the IEEE 802.15.4 packet information
+ * @return the number of bytes dissected
+ */
+guint ieee802154_dissect_payload_ies(tvbuff_t *tvb, packet_info *pinfo, proto_tree *ieee802154_tree, ieee802154_packet *packet);
+
+/**
+ * Dissect the IEEE 802.15.4 frame payload (after the Payload IEs)
+ * @param tvb the (decrypted) IEEE 802.15.4 frame payload (after the Payload IEs)
+ * @param pinfo packet info of the currently processed packet
+ * @param ieee802154_tree the tree for the IEEE 802.15.4 header/protocol
+ * @param packet the IEEE 802.15.4 packet information
+ * @param fcs_ok set to FALSE if the FCS verification failed, which is used to suppress some further processing
+ * @return the number of bytes dissected
+ */
+guint ieee802154_dissect_frame_payload(tvbuff_t *tvb, packet_info *pinfo, proto_tree *ieee802154_tree, ieee802154_packet *packet, gboolean fcs_ok);
+
+
+/* Results for the decryption */
 typedef struct {
-    unsigned char* rx_mic;
-    guint*         rx_mic_length;
-    guint          aux_offset;
-    guint          aux_length;
-    ws_decrypt_status* status;
-    unsigned char *key;
+    /* Set by decrypt_ieee802154_payload */
+    unsigned char *key;  // not valid after return of decrypt_ieee802154_payload
     guint key_number;
-} ieee802154_payload_info_t;
+    /* Set by the ieee802154_decrypt_func */
+    unsigned char* rx_mic;
+    guint* rx_mic_length;
+    guint aux_offset;
+    guint aux_length;
+    ieee802154_decrypt_status* status;
+} ieee802154_decrypt_info_t;
 
-typedef gboolean (*ieee802154_set_key_func) (ieee802154_packet * packet, unsigned char* key, unsigned char* alt_key, ieee802154_key_t* key_info);
-typedef tvbuff_t* (*ieee802154_payload_func) (tvbuff_t *, guint, packet_info *, ieee802154_packet *, ieee802154_payload_info_t*);
-tvbuff_t *dissect_ieee802154_payload(tvbuff_t * tvb, guint offset, packet_info * pinfo, proto_tree* key_tree, ieee802154_packet * packet,
-                                     ieee802154_payload_info_t* payload_info, ieee802154_set_key_func set_key_func, ieee802154_payload_func payload_func);
+/** Fill key and alt_key based on the provided information from the frame and an IEEE 802.15.4 preference table entry
+ * and return the number of keys set (0: none, 1: just key, 2: key and alt_key) */
+typedef guint (*ieee802154_set_key_func) (ieee802154_packet *packet, unsigned char *key, unsigned char *alt_key, ieee802154_key_t *uat_key);
+/** Decrypt the payload with the provided information */
+typedef tvbuff_t* (*ieee802154_decrypt_func) (tvbuff_t *, guint, packet_info *, ieee802154_packet *, ieee802154_decrypt_info_t*);
+/** Loop over the keys specified in the IEEE 802.15.4 preferences, try to use them with the specified set_key_func
+ * and try to decrypt with the specified decrypt_func
+ */
+tvbuff_t *decrypt_ieee802154_payload(tvbuff_t *tvb, guint offset, packet_info *pinfo, proto_tree *key_tree, ieee802154_packet *packet,
+                                     ieee802154_decrypt_info_t *decrypt_info, ieee802154_set_key_func set_key_func, ieee802154_decrypt_func decrypt_func);
 
 
-typedef gboolean (*ieee802154_set_mac_key_func) (ieee802154_packet * packet, unsigned char* key, unsigned char* alt_key, ieee802154_key_t* uat_key);
-extern void register_ieee802154_mac_key_hash_handler(guint hash_identifier, ieee802154_set_mac_key_func key_func);
+extern void register_ieee802154_mac_key_hash_handler(guint hash_identifier, ieee802154_set_key_func key_func);
 
 /* Short to Extended Address Prototypes */
 extern ieee802154_map_rec *ieee802154_addr_update(ieee802154_map_tab_t *, guint16, guint16, guint64,
@@ -507,5 +568,7 @@ extern gboolean ieee802154_short_addr_invalidate(guint16, guint16, guint);
 extern gboolean ieee802154_long_addr_invalidate(guint64, guint);
 
 extern ieee802154_map_tab_t ieee802154_map;
+
+extern const value_string ieee802154_mpx_kmp_id_vals[];
 
 #endif /* PACKET_IEEE802154_H */

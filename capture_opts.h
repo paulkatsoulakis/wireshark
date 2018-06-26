@@ -18,9 +18,7 @@
 #ifndef __CAPTURE_OPTS_H__
 #define __CAPTURE_OPTS_H__
 
-#ifdef HAVE_SYS_TYPES_H
-# include <sys/types.h>     /* for gid_t */
-#endif
+#include <sys/types.h>     /* for gid_t */
 
 #include <caputils/capture_ifinfo.h>
 
@@ -198,12 +196,6 @@ typedef struct link_row_tag {
     gint dlt;
 } link_row;
 
-#ifdef _WIN32
-#define INVALID_EXTCAP_PID INVALID_HANDLE_VALUE
-#else
-#define INVALID_EXTCAP_PID (GPid)-1
-#endif
-
 typedef struct interface_options_tag {
     gchar            *name;                 /* the name of the interface provided to winpcap/libpcap to specify the interface */
     gchar            *descr;
@@ -217,8 +209,8 @@ typedef struct interface_options_tag {
     gchar            *extcap;
     gchar            *extcap_fifo;
     GHashTable       *extcap_args;
-    GPid              extcap_pid;           /* pid of running process or INVALID_EXTCAP_PID */
-    gpointer          extcap_userdata;
+    GPid              extcap_pid;           /* pid of running process or WS_INVALID_PID */
+    gpointer          extcap_pipedata;
     guint             extcap_child_watch;
 #ifdef _WIN32
     HANDLE            extcap_pipe_h;
@@ -290,7 +282,7 @@ typedef struct capture_options_tag {
 
     /* GUI related */
     gboolean           real_time_mode;        /**< Update list of packets in real time */
-    gboolean           show_info;             /**< show the info dialog. GTK+ only. */
+    gboolean           show_info;             /**< show the info dialog. */
     gboolean           restart;               /**< restart after closing is done */
     gchar             *orig_save_file;        /**< the original capture file name (saved for a restart) */
 

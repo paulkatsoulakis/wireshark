@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Setup development environment on macOS (tested with 10.6.8 and Xcode
 # 3.2.6 and with 10.12.4 and Xcode 8.3).
 #
@@ -8,46 +8,49 @@
 # By Gerald Combs <gerald@wireshark.org>
 # Copyright 1998 Gerald Combs
 #
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+# SPDX-License-Identifier: GPL-2.0-or-later
 
-#
-# To install cmake
-#
-CMAKE=1
+shopt -s extglob
 #
 # To install autotools
 #
 AUTOTOOLS=1
+
 #
-# To build all libraries as 32-bit libraries uncomment the following three lines.
+# Get the major version of Darwin, so we can check the major macOS
+# version.
 #
-# export CFLAGS="$CFLAGS -arch i386"
-# export CXXFLAGS="$CXXFLAGS -arch i386"
-# export LDFLAGS="$LDFLAGS -arch i386"
+DARWIN_MAJOR_VERSION=`uname -r | sed 's/\([0-9]*\).*/\1/'`
+
 #
-# and change "macx-clang" to "macx-clang-32" in the line below.
+# To make this work on Leopard (rather than working *on* Snow Leopard
+# when building *for* Leopard) will take more work.
 #
-# Note: when building against the 10.6 SDK, clang fails, because there's
-# a missing libstdc++.dylib in the SDK; this does not bother g++, however.
-#
-#TARGET_PLATFORM=macx-g++
-TARGET_PLATFORM=macx-clang
+if [[ $DARWIN_MAJOR_VERSION -le 9 ]]; then
+    echo "This script does not support any versions of macOS before Snow Leopard" 1>&2
+    exit 1
+fi
 
 #
 # Versions of packages to download and install.
 #
+
+#
+# We use curl, but older versions of curl in older macOS releases can't
+# handle some sites - including the xz site.
+#
+# If the version of curl in the system is older than 7.54.0, download
+# curl and install it.
+#
+current_curl_version=`curl --version | sed -n 's/curl \([0-9.]*\) .*/\1/p'`
+current_curl_major_version="`expr $current_curl_version : '\([0-9][0-9]*\).*'`"
+current_curl_minor_version="`expr $current_curl_version : '[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
+current_curl_dotdot_version="`expr $current_curl_version : '[0-9][0-9]*\.[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
+if [[ $current_curl_major_version -lt 7 ||
+     ($current_curl_major_version -eq 7 &&
+      $current_curl_minor_version -lt 54) ]]; then
+    CURL_VERSION=${CURL_VERSION-7.60.0}
+fi
 
 #
 # Some packages need xz to unpack their current source.
@@ -62,9 +65,28 @@ XZ_VERSION=5.2.3
 LZIP_VERSION=1.19
 
 #
-# In case we want to build with cmake.
+# CMake is required to do the build.
 #
-CMAKE_VERSION=${CMAKE_VERSION-2.8.12.2}
+# Sigh.  CMake versions 3.7 and later fail on Lion due to issues with
+# Lion's libc++, and CMake 3.5 and 3.6 have an annoying "Make sure the
+# combination of SDK and Deployment Target are allowed" check that fails
+# in some cases.
+#
+# So if you're on Lion, we choose version 3.5.2, otherwise we choose
+# version 3.7.2.
+#
+if [[ $DARWIN_MAJOR_VERSION -gt 11 ]]; then
+    CMAKE_VERSION=${CMAKE_VERSION-3.7.2}
+else
+    CMAKE_VERSION=${CMAKE_VERSION-3.5.2}
+fi
+
+#
+# Ninja isn't required, as make is provided with Xcode, but it is
+# claimed to build faster than make.
+# Comment it out if you don't want it.
+#
+NINJA_VERSION=${NINJA_VERSION-1.8.2}
 
 #
 # The following libraries and tools are required even to build only TShark.
@@ -84,36 +106,20 @@ LIBGCRYPT_VERSION=1.7.7
 #
 # One or more of the following libraries are required to build Wireshark.
 #
-# To override the version of Qt or build the deprecated GTK interface call
-# the script with some of the variables set to the new values. Setting a
-# variable to empty will disable building the toolkit and will uninstall
-# any version previously installed by the script, e.g.
-# "GTK_VERSION=3.5.2 QT_VERSION= ./macos-setup.sh"
-# will build and install with GTK+ 3.5.2 and will not install Qt (and,
-# if the script installed Qt earlier, will un-install that version of Qt).
+# To override the version of Qt call the script with some of the variables
+# set to the new values. Setting the variable to empty will disable building
+# the toolkit and will uninstall # any version previously installed by the
+# script, e.g.
+# "QT_VERSION=5.10.1 ./macos-setup.sh"
+# will build and install with QT 5.10.1.
 #
 # Note that Qt 5, prior to 5.5.0, mishandles context menus in ways that,
 # for example, cause them not to work reliably in the packet detail or
 # packet data pane; see, for example, Qt bugs QTBUG-31937, QTBUG-41017,
 # and QTBUG-43464, all of which seem to be the same bug.
 #
-QT_VERSION=${QT_VERSION-5.8.0}
-#GTK_VERSION=${GTK_VERSION-2.24.17}
-if [ "$GTK_VERSION" ]; then
-    #
-    # We'll be building GTK+, so we need some additional libraries.
-    #
-    GTK_MAJOR_VERSION="`expr $GTK_VERSION : '\([0-9][0-9]*\).*'`"
-    GTK_MINOR_VERSION="`expr $GTK_VERSION : '[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
-    GTK_DOTDOT_VERSION="`expr $GTK_VERSION : '[0-9][0-9]*\.[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
+QT_VERSION=${QT_VERSION-5.9.5}
 
-    ATK_VERSION=2.8.0
-    PANGO_VERSION=1.30.1
-    PNG_VERSION=1.6.20
-    PIXMAN_VERSION=0.26.0
-    CAIRO_VERSION=1.12.2
-    GDK_PIXBUF_VERSION=2.28.0
-fi
 if [ "$QT_VERSION" ]; then
     QT_MAJOR_VERSION="`expr $QT_VERSION : '\([0-9][0-9]*\).*'`"
     QT_MINOR_VERSION="`expr $QT_VERSION : '[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
@@ -150,17 +156,20 @@ fi
 # scripts to work with 5.1, 5.2, and 5.3, as long as they only use Lua
 # features present in all three versions)
 LUA_VERSION=5.2.4
-PORTAUDIO_VERSION=pa_stable_v190600_20161030
 SNAPPY_VERSION=1.1.4
 LIBXML2_VERSION=2.9.4
 LZ4_VERSION=1.7.5
 SBC_VERSION=1.3
-GEOIP_VERSION=1.6.10
 CARES_VERSION=1.12.0
 # Redmine used by libssh.org numbers the files available for download,
 # so using version only isn't enough
 LIBSSH_VERSION=0.7.4
 LIBSSH_FILENUM=210
+# mmdbresolve
+MAXMINDDB_VERSION=1.3.2
+
+ASCIIDOCTOR_VERSION=${ASCIIDOCTOR_VERSION-1.5.7.1}
+ASCIIDOCTORPDF_VERSION=${ASCIIDOCTORPDF_VERSION-1.5.0.alpha.16}
 
 NGHTTP2_VERSION=1.21.0
 SPANDSP_VERSION=0.0.6
@@ -172,8 +181,6 @@ if [ "$SPANDSP_VERSION" ]; then
 fi
 BCG729_VERSION=1.0.2
 
-DARWIN_MAJOR_VERSION=`uname -r | sed 's/\([0-9]*\).*/\1/'`
-
 #
 # GNU autotools; they're provided with releases up to Snow Leopard, but
 # not in later releases, and the Snow Leopard version is too old for
@@ -182,6 +189,42 @@ DARWIN_MAJOR_VERSION=`uname -r | sed 's/\([0-9]*\).*/\1/'`
 AUTOCONF_VERSION=2.69
 AUTOMAKE_VERSION=1.15
 LIBTOOL_VERSION=2.4.6
+
+install_curl() {
+    if [ "$CURL_VERSION" -a ! -f curl-$CURL_VERSION-done ] ; then
+        echo "Downloading, building, and installing curl:"
+        [ -f curl-$CURL_VERSION.tar.bz2 ] || curl -L -O https://curl.haxx.se/download/curl-$CURL_VERSION.tar.bz2 || exit 1
+        $no_build && echo "Skipping installation" && return
+        bzcat curl-$CURL_VERSION.tar.bz2 | tar xf - || exit 1
+        cd curl-$CURL_VERSION
+        ./configure || exit 1
+        make $MAKE_BUILD_OPTS || exit 1
+        $DO_MAKE_INSTALL || exit 1
+        cd ..
+        touch curl-$CURL_VERSION-done
+    fi
+}
+
+uninstall_curl() {
+    if [ ! -z "$installed_curl_version" ] ; then
+        echo "Uninstalling curl:"
+        cd curl-$installed_curl_version
+        $DO_MAKE_UNINSTALL || exit 1
+        make distclean || exit 1
+        cd ..
+        rm curl-$installed_curl_version-done
+
+        if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
+            #
+            # Get rid of the previously downloaded and unpacked version.
+            #
+            rm -rf curl-$installed_curl_version
+            rm -rf curl-$installed_curl_version.tar.bz2
+        fi
+
+        installed_curl_version=""
+    fi
+}
 
 install_xz() {
     if [ "$XZ_VERSION" -a ! -f xz-$XZ_VERSION-done ] ; then
@@ -378,8 +421,89 @@ uninstall_libtool() {
     fi
 }
 
+install_ninja() {
+    if [ "$NINJA_VERSION" -a ! -f ninja-$NINJA_VERSION-done ] ; then
+        echo "Downloading and installing Ninja:"
+        #
+        # Download the zipball, unpack it, and move the binary to
+        # /usr/local/bin.
+        #
+        [ -f ninja-mac-v$NINJA_VERSION.zip ] || curl -L -o ninja-mac-v$NINJA_VERSION.zip https://github.com/ninja-build/ninja/releases/download/v$NINJA_VERSION/ninja-mac.zip || exit 1
+        $no_build && echo "Skipping installation" && return
+        unzip ninja-mac-v$NINJA_VERSION.zip
+        sudo mv ninja /usr/local/bin
+        touch ninja-$NINJA_VERSION-done
+    fi
+}
+
+uninstall_ninja() {
+    if [ ! -z "$installed_ninja_version" ]; then
+        echo "Uninstalling Ninja:"
+        sudo rm /usr/local/bin/ninja
+        if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
+            rm -f ninja-mac-v$installed_ninja_version.zip
+        fi
+
+        installed_ninja_version=""
+    fi
+}
+
+install_asciidoctor() {
+    if [ ! -f asciidoctor-${ASCIIDOCTOR_VERSION}-done ]; then
+        echo "Downloading and installing Asciidoctor:"
+        sudo gem install -V asciidoctor --version "=${ASCIIDOCTOR_VERSION}"
+        touch asciidoctor-${ASCIIDOCTOR_VERSION}-done
+    fi
+}
+
+uninstall_asciidoctor() {
+    if [ ! -z "$installed_asciidoctor_version" ]; then
+        echo "Uninstalling Asciidoctor:"
+        sudo gem uninstall -V asciidoctor --version "=${installed_asciidoctor_version}"
+        rm asciidoctor-$installed_asciidoctor_version-done
+
+        ##if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
+            #
+            # Get rid of the previously downloaded and unpacked version,
+            # whatever it might happen to be called.
+            #
+        ##    rm -f asciidoctor-$installed_asciidoctor_version
+        ##fi
+        installed_asciidoctor_version=""
+    fi
+}
+
+install_asciidoctorpdf() {
+    if [ ! -f asciidoctorpdf-${ASCIIDOCTORPDF_VERSION}-done ]; then
+        ## XXX gem does not track dependencies that are installed for asciidoctor-pdf
+        ## record them for uninstallation
+        ## ttfunk, pdf-core, prawn, prawn-table, Ascii85, ruby-rc4, hashery, afm, pdf-reader, prawn-templates, public_suffix, addressable, css_parser, prawn-svg, prawn-icon, safe_yaml, thread_safe, polyglot, treetop, asciidoctor-pdf
+        echo "Downloading and installing Asciidoctor-pdf:"
+        sudo gem install -V asciidoctor-pdf --prerelease --version "=${ASCIIDOCTORPDF_VERSION}"
+        touch asciidoctorpdf-${ASCIIDOCTORPDF_VERSION}-done
+    fi
+}
+
+uninstall_asciidoctorpdf() {
+    if [ ! -z "$installed_asciidoctorpdf_version" ]; then
+        echo "Uninstalling Asciidoctor:"
+        sudo gem uninstall -V asciidoctor-pdf --version "=${installed_asciidoctorpdf_version}"
+        ## XXX uninstall dependencies
+        rm asciidoctorpdf-$installed_asciidoctorpdf_version-done
+
+        ##if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
+            #
+            # Get rid of the previously downloaded and unpacked version,
+            # whatever it might happen to be called.
+            #
+        ##    rm -f asciidoctorpdf-$installed_asciidoctorpdf_version
+        ##fi
+        installed_asciidoctorpdf_version=""
+    fi
+}
+
 install_cmake() {
-    if [ -n "$CMAKE" -a ! -f cmake-$CMAKE_VERSION-done ]; then
+    if [ ! -f cmake-$CMAKE_VERSION-done ]; then
         echo "Downloading and installing CMake:"
         CMAKE_MAJOR_VERSION="`expr $CMAKE_VERSION : '\([0-9][0-9]*\).*'`"
         CMAKE_MINOR_VERSION="`expr $CMAKE_VERSION : '[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
@@ -507,7 +631,7 @@ install_gettext() {
         make $MAKE_BUILD_OPTS || exit 1
         $DO_MAKE_INSTALL || exit 1
         cd ..
-       touch gettext-$GETTEXT_VERSION-done
+        touch gettext-$GETTEXT_VERSION-done
     fi
 }
 
@@ -580,21 +704,12 @@ install_glib() {
         GLIB_MAJOR_VERSION="`expr $GLIB_VERSION : '\([0-9][0-9]*\).*'`"
         GLIB_MINOR_VERSION="`expr $GLIB_VERSION : '[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
         GLIB_DOTDOT_VERSION="`expr $GLIB_VERSION : '[0-9][0-9]*\.[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
-        if [[ $GLIB_MAJOR_VERSION -gt 2 ||
-             ($GLIB_MAJOR_VERSION -eq 2 && $GLIB_MINOR_VERSION -gt 28) ||
-             ($GLIB_MAJOR_VERSION -eq 2 && $GLIB_MINOR_VERSION -eq 28 && $GLIB_DOTDOT_VERSION -ge 8) ]]
-        then
-            #
-            # Starting with GLib 2.28.8, xz-compressed tarballs are available.
-            #
-            [ -f glib-$GLIB_VERSION.tar.xz ] || curl -L -O http://ftp.gnome.org/pub/gnome/sources/glib/$glib_dir/glib-$GLIB_VERSION.tar.xz || exit 1
-            $no_build && echo "Skipping installation" && return
-            xzcat glib-$GLIB_VERSION.tar.xz | tar xf - || exit 1
-        else
-            [ -f glib-$GLIB_VERSION.tar.bz2 ] || curl -L -O http://ftp.gnome.org/pub/gnome/sources/glib/$glib_dir/glib-$GLIB_VERSION.tar.bz2 || exit 1
-            $no_build && echo "Skipping installation" && return
-            bzcat glib-$GLIB_VERSION.tar.bz2 | tar xf - || exit 1
-        fi
+        #
+        # Starting with GLib 2.28.8, xz-compressed tarballs are available.
+        #
+        [ -f glib-$GLIB_VERSION.tar.xz ] || curl -L -O http://ftp.gnome.org/pub/gnome/sources/glib/$glib_dir/glib-$GLIB_VERSION.tar.xz || exit 1
+        $no_build && echo "Skipping installation" && return
+        xzcat glib-$GLIB_VERSION.tar.xz | tar xf - || exit 1
         cd glib-$GLIB_VERSION
         #
         # macOS ships with libffi, but doesn't provide its pkg-config file;
@@ -632,17 +747,6 @@ install_glib() {
             LIBFFI_CFLAGS="-I $includedir/ffi" LIBFFI_LIBS="-lffi" CFLAGS="$CFLAGS -DMACOSX -Wno-format-nonliteral $VERSION_MIN_FLAGS $SDKFLAGS" CXXFLAGS="$CXXFLAGS -DMACOSX -Wno-format-nonliteral $VERSION_MIN_FLAGS $SDKFLAGS" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure || exit 1
         fi
 
-        #
-        # Apply the fix to GNOME bug 529806:
-        #
-        #    https://bugzilla.gnome.org/show_bug.cgi?id=529806
-        #
-        # if we have a version of GLib prior to 2.30.
-        #
-        if [[ $GLIB_MAJOR_VERSION -eq 2 && $GLIB_MINOR_VERSION -le 30 ]]
-        then
-            patch -p0 <../../macosx-support-lib-patches/glib-gconvert.c.patch || exit 1
-        fi
         make $MAKE_BUILD_OPTS || exit 1
         $DO_MAKE_INSTALL || exit 1
         cd ..
@@ -652,13 +756,6 @@ install_glib() {
 
 uninstall_glib() {
     if [ ! -z "$installed_glib_version" ] ; then
-        #
-        # ATK, Pango, and GTK depend on this, so uninstall them.
-        #
-        uninstall_gtk
-        uninstall_pango
-        uninstall_atk
-
         echo "Uninstalling GLib:"
         cd glib-$installed_glib_version
         $DO_MAKE_UNINSTALL || exit 1
@@ -671,7 +768,7 @@ uninstall_glib() {
             # Get rid of the previously downloaded and unpacked version.
             #
             rm -rf glib-$installed_glib_version
-            rm -rf glib-$installed_glib_version.tar.xz glib-$installed_glib_version.tar.bz2
+            rm -rf glib-$installed_glib_version.tar.xz
         fi
 
         installed_glib_version=""
@@ -685,51 +782,58 @@ install_qt() {
         # What you get for this URL might just be a 302 Found reply, so use
         # -L so we get redirected.
         #
-        if [ "$QT_MAJOR_VERSION" -ge 5 ]
-        then
-            QT_VOLUME=qt-opensource-mac-x64-clang-$QT_VERSION
-        else
-            QT_VOLUME=qt-opensource-mac-$QT_VERSION
-        fi
-        [ -f $QT_VOLUME.dmg ] || curl -L -O http://download.qt.io/archive/qt/$QT_MAJOR_MINOR_VERSION/$QT_MAJOR_MINOR_DOTDOT_VERSION/$QT_VOLUME.dmg || exit 1
-        $no_build && echo "Skipping installation" && return
-        sudo hdiutil attach $QT_VOLUME.dmg || exit 1
+        # 5.0 - 5.1:  qt-mac-opensource-{version}-clang-offline.dmg
+        # 5.2.0:      qt-mac-opensource-{version}.dmg
+        # 5.2.1:      qt-opensource-mac-x64-clang-{version}.dmg
+        # 5.3 - 5.8:  qt-opensource-mac-x64-clang-{version}.dmg
+        # 5.9 - 5.10: qt-opensource-mac-x64-{version}.dmg
+        #
+        case $QT_MAJOR_VERSION in
 
-        if [ "$QT_MAJOR_VERSION" -ge 5 ]
-        then
+        1|2|3|4)
+            echo "Qt $QT_VERSION" is too old 1>&2
+            ;;
+
+        5*)
+            case $QT_MINOR_VERSION in
+
+            0|1)
+                echo "Qt $QT_VERSION" is too old 1>&2
+                ;;
+
+            2)
+                case $QT_DOTDOT_VERSION in
+
+                0)
+                    QT_VOLUME=qt-mac-opensource-$QT_VERSION
+                    ;;
+
+                1)
+                    QT_VOLUME=qt-opensource-mac-x64-clang-$QT_VERSION
+                    ;;
+                esac
+                ;;
+
+            3|4|5|6|7|8)
+                QT_VOLUME=qt-opensource-mac-x64-clang-$QT_VERSION
+                ;;
+
+            9|10)
+                QT_VOLUME=qt-opensource-mac-x64-$QT_VERSION
+                ;;
+            esac
+            [ -f $QT_VOLUME.dmg ] || curl -L -O http://download.qt.io/archive/qt/$QT_MAJOR_MINOR_VERSION/$QT_MAJOR_MINOR_DOTDOT_VERSION/$QT_VOLUME.dmg || exit 1
+            $no_build && echo "Skipping installation" && return
+            sudo hdiutil attach $QT_VOLUME.dmg || exit 1
+
             #
             # Run the installer executable directly, so that we wait for
             # it to finish.  Then unmount the volume.
             #
             /Volumes/$QT_VOLUME/$QT_VOLUME.app/Contents/MacOS/$QT_VOLUME
             sudo hdiutil detach /Volumes/$QT_VOLUME
-        else
-            #
-            # Open the installer package; use -W, so that we wait for
-            # the installer to finish.  Then unmount the volume.
-            #
-            open -W "/Volumes/Qt $QT_MAJOR_MINOR_DOTDOT_VERSION/Qt.mpkg"
-            sudo hdiutil detach "/Volumes/Qt $QT_MAJOR_MINOR_DOTDOT_VERSION"
-        fi
-
-        #
-        # Versions 5.3.x through 5.5.0, at least, have bogus .pc files.
-        # See bugs QTBUG-35256 and QTBUG-47162.
-        #
-        # Fix the files.
-        #
-        for i in $HOME/Qt$QT_VERSION/$QT_MAJOR_MINOR_VERSION/clang_64/lib/pkgconfig/*.pc
-        do
-            ed - $i <<EOF
-H
-g/Cflags: /s;;Cflags: -F\${libdir} ;
-g/Cflags: /s;-I\${includedir}/Qt\([a-zA-Z0-9_]*\);-I\${libdir}/Qt\1.framework/Versions/5/Headers;
-g/Libs: /s;';;g
-w
-q
-EOF
-        done
-        touch qt-$QT_VERSION-done
+            touch qt-$QT_VERSION-done
+        esac
     fi
 }
 
@@ -743,401 +847,54 @@ uninstall_qt() {
             #
             # Get rid of the previously downloaded version.
             #
-            rm -rf qt-opensource-mac-x64-clang-$installed_qt_version.dmg
+            # 5.0 - 5.1:  qt-mac-opensource-{version}-clang-offline.dmg
+            # 5.2.0:      qt-mac-opensource-{version}.dmg
+            # 5.2.1:      qt-opensource-mac-x64-clang-{version}.dmg
+            # 5.3 - 5.8:  qt-opensource-mac-x64-clang-{version}.dmg
+            # 5.9 - 5.10: qt-opensource-mac-x64-{version}.dmg
+            #
+            installed_qt_major_version="`expr $installed_qt_version : '\([0-9][0-9]*\).*'`"
+            installed_qt_minor_version="`expr $installed_qt_version : '[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
+            installed_qt_dotdot_version="`expr $installed_qt_version : '[0-9][0-9]*\.[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
+            case $installed_qt_major_version in
+
+            1|2|3|4)
+                echo "Qt $installed_qt_version" is too old 1>&2
+                ;;
+
+            5*)
+                case $installed_qt_minor_version in
+
+                0|1)
+                    installed_qt_volume=qt-mac-opensource-$installed_qt_version-clang-offline.dmg
+                    ;;
+
+                2)
+                    case $installed_qt_dotdot_version in
+
+                    0)
+                        installed_qt_volume=qt-mac-opensource-$installed_qt_version.dmg
+                        ;;
+
+                    1)
+                        installed_qt_volume=qt-opensource-mac-x64-clang-$installed_qt_version.dmg
+                        ;;
+                    esac
+                    ;;
+
+                3|4|5|6|7|8)
+                    installed_qt_volume=qt-opensource-mac-x64-clang-$installed_qt_version.dmg
+                    ;;
+
+                9|10)
+                    installed_qt_volume=qt-opensource-mac-x64-$installed_qt_version.dmg
+                    ;;
+                esac
+            esac
+            rm -f $installed_qt_volume
         fi
 
         installed_qt_version=""
-    fi
-}
-
-install_libpng() {
-    if [ ! -f libpng-$PNG_VERSION-done ] ; then
-        echo "Downloading, building, and installing libpng:"
-        #
-        # The FTP site puts libpng x.y.* into a libpngxy directory.
-        #
-        subdir=`echo $PNG_VERSION | sed 's/\([1-9][0-9]*\)\.\([1-9][0-9]*\).*/libpng\1\2'/`
-        [ -f libpng-$PNG_VERSION.tar.xz ] || curl -L -O ftp://ftp.simplesystems.org/pub/libpng/png/src/$subdir/libpng-$PNG_VERSION.tar.xz
-        $no_build && echo "Skipping installation" && return
-        xzcat libpng-$PNG_VERSION.tar.xz | tar xf - || exit 1
-        cd libpng-$PNG_VERSION
-        CFLAGS="$CFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" CXXFLAGS="$CXXFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure || exit 1
-        make $MAKE_BUILD_OPTS || exit 1
-        $DO_MAKE_INSTALL || exit 1
-        cd ..
-        touch libpng-$PNG_VERSION-done
-    fi
-}
-
-uninstall_libpng() {
-    if [ ! -z "$installed_libpng_version" ] ; then
-        #
-        # Cairo depends on this, so uninstall it.
-        #
-        uninstall_cairo "$@"
-
-        echo "Uninstalling libpng:"
-        cd libpng-$installed_libpng_version
-        $DO_MAKE_UNINSTALL || exit 1
-        make distclean || exit 1
-        cd ..
-        rm libpng-$installed_libpng_version-done
-
-        if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
-            #
-            # Get rid of the previously downloaded and unpacked version.
-            #
-            rm -rf libpng-$installed_libpng_version
-            rm -rf libpng-$installed_libpng_version.tar.xz
-        fi
-
-        installed_libpng_version=""
-    fi
-}
-
-install_pixman() {
-    if [ ! -f pixman-$PIXMAN_VERSION-done ] ; then
-        echo "Downloading, building, and installing pixman:"
-        [ -f pixman-$PIXMAN_VERSION.tar.gz ] || curl -L -O http://www.cairographics.org/releases/pixman-$PIXMAN_VERSION.tar.gz
-        $no_build && echo "Skipping installation" && return
-        gzcat pixman-$PIXMAN_VERSION.tar.gz | tar xf - || exit 1
-        cd pixman-$PIXMAN_VERSION
-        CFLAGS="$CFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" CXXFLAGS="$CXXFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure || exit 1
-        make $MAKE_BUILD_OPTS || exit 1
-        $DO_MAKE_INSTALL || exit 1
-        cd ..
-        touch pixman-$PIXMAN_VERSION-done
-    fi
-}
-
-uninstall_pixman() {
-    if [ ! -z "$installed_pixman_version" ] ; then
-        #
-        # Cairo depends on this, so uninstall it.
-        #
-        uninstall_cairo "$@"
-
-        echo "Uninstalling pixman:"
-        cd pixman-$installed_pixman_version
-        $DO_MAKE_UNINSTALL || exit 1
-        make distclean || exit 1
-        cd ..
-        rm pixman-$installed_pixman_version-done
-
-        if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
-            #
-            # Get rid of the previously downloaded and unpacked version.
-            #
-            rm -rf pixman-$installed_pixman_version
-            rm -rf pixman-$installed_pixman_version.tar.gz
-        fi
-
-        installed_pixman_version=""
-    fi
-}
-
-install_cairo() {
-    if [ ! -f cairo-$CAIRO_VERSION-done ] ; then
-        echo "Downloading, building, and installing Cairo:"
-        CAIRO_MAJOR_VERSION="`expr $CAIRO_VERSION : '\([0-9][0-9]*\).*'`"
-        CAIRO_MINOR_VERSION="`expr $CAIRO_VERSION : '[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
-        CAIRO_DOTDOT_VERSION="`expr $CAIRO_VERSION : '[0-9][0-9]*\.[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
-        if [[ $CAIRO_MAJOR_VERSION -gt 1 ||
-             ($CAIRO_MAJOR_VERSION -eq 2 && $CAIRO_MINOR_VERSION -gt 12) ||
-             ($CAIRO_MAJOR_VERSION -eq 2 && $CAIRO_MINOR_VERSION -eq 12 && $CAIRO_DOTDOT_VERSION -ge 2) ]]
-        then
-            #
-            # Starting with Cairo 1.12.2, the tarballs are compressed with
-            # xz rather than gzip.
-            #
-            [ -f cairo-$CAIRO_VERSION.tar.xz ] || curl -L -O http://cairographics.org/releases/cairo-$CAIRO_VERSION.tar.xz || exit 1
-            $no_build && echo "Skipping installation" && return
-            xzcat cairo-$CAIRO_VERSION.tar.xz | tar xf - || exit 1
-        else
-            [ -f cairo-$CAIRO_VERSION.tar.gz ] || curl -L -O http://cairographics.org/releases/cairo-$CAIRO_VERSION.tar.gz || exit 1
-            $no_build && echo "Skipping installation" && return
-            gzcat cairo-$CAIRO_VERSION.tar.gz | tar xf - || exit 1
-        fi
-        cd cairo-$CAIRO_VERSION
-        # CFLAGS="$CFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" CXXFLAGS="$CXXFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure --enable-quartz=no || exit 1
-        # Maybe follow http://cairographics.org/end_to_end_build_for_mac_os_x/
-        CFLAGS="$CFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" CXXFLAGS="$CXXFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure --enable-quartz=yes || exit 1
-        #
-        # We must avoid the version of libpng that comes with X11; the
-        # only way I've found to force that is to forcibly set INCLUDES
-        # when we do the build, so that this comes before CAIRO_CFLAGS,
-        # which has -I/usr/X11/include added to it before anything
-        # connected to libpng is.
-        #
-        INCLUDES="-I/usr/local/include/libpng15" make $MAKE_BUILD_OPTS || exit 1
-        $DO_MAKE_INSTALL || exit 1
-        cd ..
-        touch cairo-$CAIRO_VERSION-done
-    fi
-}
-
-uninstall_cairo() {
-    if [ ! -z "$installed_cairo_version" ] ; then
-        #
-        # GTK+ depends on this, so uninstall it.
-        #
-        uninstall_gtk "$@"
-
-        echo "Uninstalling Cairo:"
-        cd cairo-$installed_cairo_version
-        $DO_MAKE_UNINSTALL || exit 1
-        make distclean || exit 1
-        cd ..
-        rm cairo-$installed_cairo_version-done
-
-        if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
-            #
-            # Get rid of the previously downloaded and unpacked version.
-            #
-            rm -rf cairo-$installed_cairo_version
-            rm -rf cairo-$installed_cairo_version.tar.xz cairo-$installed_cairo_version.tar.gz
-        fi
-
-        installed_cairo_version=""
-    fi
-}
-
-install_atk() {
-    if [ ! -f atk-$ATK_VERSION-done ] ; then
-        echo "Downloading, building, and installing ATK:"
-        atk_dir=`expr $ATK_VERSION : '\([0-9][0-9]*\.[0-9][0-9]*\).*'`
-        ATK_MAJOR_VERSION="`expr $ATK_VERSION : '\([0-9][0-9]*\).*'`"
-        ATK_MINOR_VERSION="`expr $ATK_VERSION : '[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
-        ATK_DOTDOT_VERSION="`expr $ATK_VERSION : '[0-9][0-9]*\.[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
-        if [[ $ATK_MAJOR_VERSION -gt 2 ||
-             ($ATK_MAJOR_VERSION -eq 2 && $ATK_MINOR_VERSION -gt 0) ||
-             ($ATK_MAJOR_VERSION -eq 2 && $ATK_MINOR_VERSION -eq 0 && $ATK_DOTDOT_VERSION -ge 1) ]]
-        then
-            #
-            # Starting with ATK 2.0.1, xz-compressed tarballs are available.
-            #
-            [ -f atk-$ATK_VERSION.tar.xz ] || curl -L -O http://ftp.gnome.org/pub/gnome/sources/atk/$atk_dir/atk-$ATK_VERSION.tar.xz || exit 1
-            $no_build && echo "Skipping installation" && return
-            xzcat atk-$ATK_VERSION.tar.xz | tar xf - || exit 1
-        else
-            [ -f atk-$ATK_VERSION.tar.bz2 ] || curl -L -O http://ftp.gnome.org/pub/gnome/sources/atk/$atk_dir/atk-$ATK_VERSION.tar.bz2 || exit 1
-            $no_build && echo "Skipping installation" && return
-            bzcat atk-$ATK_VERSION.tar.bz2 | tar xf - || exit 1
-        fi
-        cd atk-$ATK_VERSION
-        CFLAGS="$CFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" CXXFLAGS="$CXXFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure || exit 1
-        make $MAKE_BUILD_OPTS || exit 1
-        $DO_MAKE_INSTALL || exit 1
-        cd ..
-        touch atk-$ATK_VERSION-done
-    fi
-}
-
-uninstall_atk() {
-    if [ ! -z "$installed_atk_version" ] ; then
-        #
-        # GTK+ depends on this, so uninstall it.
-        #
-        uninstall_gtk "$@"
-
-        echo "Uninstalling ATK:"
-        cd atk-$installed_atk_version
-        $DO_MAKE_UNINSTALL || exit 1
-        make distclean || exit 1
-        cd ..
-        rm atk-$installed_atk_version-done
-
-        if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
-            #
-            # Get rid of the previously downloaded and unpacked version.
-            #
-            rm -rf atk-$installed_atk_version
-            rm -rf atk-$installed_atk_version.tar.xz atk-$installed_atk_version.tar.bz2
-        fi
-
-        installed_atk_version=""
-    fi
-}
-
-install_pango() {
-    if [ ! -f pango-$PANGO_VERSION-done ] ; then
-        echo "Downloading, building, and installing Pango:"
-        pango_dir=`expr $PANGO_VERSION : '\([0-9][0-9]*\.[0-9][0-9]*\).*'`
-        PANGO_MAJOR_VERSION="`expr $PANGO_VERSION : '\([0-9][0-9]*\).*'`"
-        PANGO_MINOR_VERSION="`expr $PANGO_VERSION : '[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
-        if [[ $PANGO_MAJOR_VERSION -gt 1 ||
-              $PANGO_MINOR_VERSION -ge 29 ]]
-        then
-            #
-            # Starting with Pango 1.29, the tarballs are compressed with
-            # xz rather than bzip2.
-            #
-            [ -f pango-$PANGO_VERSION.tar.xz ] || curl -L -O http://ftp.gnome.org/pub/gnome/sources/pango/$pango_dir/pango-$PANGO_VERSION.tar.xz || exit 1
-            $no_build && echo "Skipping installation" && return
-            xzcat pango-$PANGO_VERSION.tar.xz | tar xf - || exit 1
-        else
-            [ -f pango-$PANGO_VERSION.tar.bz2 ] || curl -L -O http://ftp.gnome.org/pub/gnome/sources/pango/$pango_dir/pango-$PANGO_VERSION.tar.bz2 || exit 1
-            $no_build && echo "Skipping installation" && return
-            bzcat pango-$PANGO_VERSION.tar.bz2 | tar xf - || exit 1
-        fi
-        cd pango-$PANGO_VERSION
-        CFLAGS="$CFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" CXXFLAGS="$CXXFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure || exit 1
-        make $MAKE_BUILD_OPTS || exit 1
-        $DO_MAKE_INSTALL || exit 1
-        cd ..
-        touch pango-$PANGO_VERSION-done
-    fi
-}
-
-uninstall_pango() {
-    if [ ! -z "$installed_pango_version" ] ; then
-        #
-        # GTK+ depends on this, so uninstall it.
-        #
-        uninstall_gtk "$@"
-
-        echo "Uninstalling Pango:"
-        cd pango-$installed_pango_version
-        $DO_MAKE_UNINSTALL || exit 1
-        make distclean || exit 1
-        cd ..
-        rm pango-$installed_pango_version-done
-
-        if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
-            #
-            # Get rid of the previously downloaded and unpacked version.
-            #
-            rm -rf pango-$installed_pango_version
-            rm -rf pango-$installed_pango_version.tar.xz pango-$installed_pango_version.tar.bz2
-        fi
-
-        installed_pango_version=""
-    fi
-}
-
-install_gdk_pixbuf() {
-    if [ "$GDK_PIXBUF_VERSION" -a ! -f gdk-pixbuf-$GDK_PIXBUF_VERSION-done ] ; then
-        echo "Downloading, building, and installing gdk-pixbuf:"
-        gdk_pixbuf_dir=`expr $GDK_PIXBUF_VERSION : '\([0-9][0-9]*\.[0-9][0-9]*\).*'`
-        [ -f gdk-pixbuf-$GDK_PIXBUF_VERSION.tar.xz ] || curl -L -O http://ftp.gnome.org/pub/gnome/sources/gdk-pixbuf/$gdk_pixbuf_dir/gdk-pixbuf-$GDK_PIXBUF_VERSION.tar.xz || exit 1
-        $no_build && echo "Skipping installation" && return
-        xzcat gdk-pixbuf-$GDK_PIXBUF_VERSION.tar.xz | tar xf - || exit 1
-        cd gdk-pixbuf-$GDK_PIXBUF_VERSION
-        #
-        # If we're building using the 10.6 SDK, force the use of libpng12.
-        #
-        # The OS's X11, and corresponding SDK, didn't introduce libpng15,
-        # or pkg-config files, until 10.7, so, for 10.6 have to explicitly
-        # set LIBPNG to override the configure script, and also force the
-        # CFLAGS to look for the header files for libpng12 (note that
-        # -isysroot doesn't affect the arguments to -I, so we need to
-        # include the SDK path explicitly).
-        #
-        if [[ "$sdk_target" = 10.6 ]]
-        then
-            LIBPNG="-L/usr/X11/lib -lpng12" CFLAGS="$CFLAGS $VERSION_MIN_FLAGS $SDKFLAGS -I$SDKPATH/usr/X11/include/libpng12" CXXFLAGS="$CXXFLAGS $VERSION_MIN_FLAGS $SDKFLAGS -I$SDKPATH/usr/X11/include/libpng12" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure --without-libtiff --without-libjpeg || exit 1
-        else
-            CFLAGS="$CFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" CXXFLAGS="$CXXFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure --without-libtiff --without-libjpeg || exit 1
-        fi
-        make $MAKE_BUILD_OPTS || exit 1
-        $DO_MAKE_INSTALL || exit 1
-        cd ..
-        touch gdk-pixbuf-$GDK_PIXBUF_VERSION-done
-    fi
-}
-
-uninstall_gdk_pixbuf() {
-    if [ ! -z "$installed_gdk_pixbuf_version" ] ; then
-        #
-        # GTK+ depends on this, so uninstall it.
-        #
-        uninstall_gtk "$@"
-
-        echo "Uninstalling gdk-pixbuf:"
-        cd gdk-pixbuf-$installed_gdk_pixbuf_version
-        $DO_MAKE_UNINSTALL || exit 1
-        make distclean || exit 1
-        cd ..
-        rm gdk-pixbuf-$installed_gdk_pixbuf_version-done
-
-        if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
-            #
-            # Get rid of the previously downloaded and unpacked version.
-            #
-            rm -rf gdk-pixbuf-$installed_gdk_pixbuf_version
-            rm -rf gdk-pixbuf-$installed_gdk_pixbuf_version.tar.xz
-        fi
-
-        installed_gdk_pixbuf_version=""
-    fi
-}
-
-install_gtk() {
-    if [ ! -f gtk+-$GTK_VERSION-done ] ; then
-        echo "Downloading, building, and installing GTK+:"
-        gtk_dir=`expr $GTK_VERSION : '\([0-9][0-9]*\.[0-9][0-9]*\).*'`
-        if [[ $GTK_MAJOR_VERSION -gt 2 ||
-             ($GTK_MAJOR_VERSION -eq 2 && $GTK_MINOR_VERSION -gt 24) ||
-             ($GTK_MAJOR_VERSION -eq 2 && $GTK_MINOR_VERSION -eq 24 && $GTK_DOTDOT_VERSION -ge 5) ]]
-        then
-            #
-            # Starting with GTK+ 2.24.5, the tarballs are compressed with
-            # xz rather than gzip, in addition to bzip2; use xz, as we've
-            # built and installed it, and as xz compresses better than
-            # bzip2 so the tarballs take less time to download.
-            #
-            [ -f gtk+-$GTK_VERSION.tar.xz ] || curl -L -O http://ftp.gnome.org/pub/gnome/sources/gtk+/$gtk_dir/gtk+-$GTK_VERSION.tar.xz || exit 1
-            $no_build && echo "Skipping installation" && return
-            xzcat gtk+-$GTK_VERSION.tar.xz | tar xf - || exit 1
-        else
-            [ -f gtk+-$GTK_VERSION.tar.bz2 ] || curl -L -O http://ftp.gnome.org/pub/gnome/sources/gtk+/$gtk_dir/gtk+-$GTK_VERSION.tar.bz2 || exit 1
-            $no_build && echo "Skipping installation" && return
-            bzcat gtk+-$GTK_VERSION.tar.bz2 | tar xf - || exit 1
-        fi
-        cd gtk+-$GTK_VERSION
-        if [ $DARWIN_MAJOR_VERSION -ge "12" ]
-        then
-            #
-            # GTK+ 2.24.10, at least, doesn't build on Mountain Lion with the
-            # CUPS printing backend - either the CUPS API changed incompatibly
-            # or the backend was depending on non-API implementation details.
-            #
-            # Configure it out, on Mountain Lion and later, for now.
-            # (12 is the Darwin major version number in Mountain Lion.)
-            #
-            # Also, configure out libtiff and libjpeg; configure scripts
-            # just ignore unknown --enable/--disable and --with/--without
-            # options (at least they've always do so up to now).
-            #
-            CFLAGS="$CFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" CXXFLAGS="$CXXFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure --disable-cups --without-libtiff --without-libjpeg || exit 1
-        else
-            CFLAGS="$CFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" CXXFLAGS="$CXXFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure --without-libtiff --without-libjpeg || exit 1
-        fi
-        make $MAKE_BUILD_OPTS || exit 1
-        $DO_MAKE_INSTALL || exit 1
-        cd ..
-        touch gtk+-$GTK_VERSION-done
-    fi
-}
-
-uninstall_gtk() {
-    if [ ! -z "$installed_gtk_version" ] ; then
-        echo "Uninstalling GTK+:"
-        cd gtk+-$installed_gtk_version
-        $DO_MAKE_UNINSTALL || exit 1
-        make distclean || exit 1
-        cd ..
-        rm gtk+-$installed_gtk_version-done
-
-        if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
-            #
-            # Get rid of the previously downloaded and unpacked version.
-            #
-            rm -rf gtk+-$installed_gtk_version
-            rm -rf gtk+-$installed_gtk_version.tar.xz gtk+-$installed_gtk_version.tar.bz2
-        fi
-
-        installed_gtk_version=""
     fi
 }
 
@@ -1453,61 +1210,6 @@ uninstall_lua() {
     fi
 }
 
-install_portaudio() {
-    #
-    # Check for both the old versionless portaudio-done and the new
-    # versioned -done file.
-    #
-    if [ "$PORTAUDIO_VERSION" -a ! -f portaudio-$PORTAUDIO_VERSION-done ] ; then
-        echo "Downloading, building, and installing PortAudio:"
-        [ -f $PORTAUDIO_VERSION.tgz ] || curl -L -O http://www.portaudio.com/archives/$PORTAUDIO_VERSION.tgz || exit 1
-        $no_build && echo "Skipping installation" && return
-        gzcat $PORTAUDIO_VERSION.tgz | tar xf - || exit 1
-        cd portaudio
-        #
-        # Disable fat builds - the configure script doesn't work right
-        # with Xcode 4 if you leave them enabled, and we don't build
-        # any other libraries fat (GLib, for example, would be very
-        # hard to build fat), so there's no advantage to having PortAudio
-        # built fat.
-        #
-        # Set the minimum macOS version to 10.4, to suppress some
-        # deprecation warnings.  (Good luck trying to make any of
-        # this build on an OS+Xcode with a pre-10.4 SDK; we don't
-        # worry about the user requesting that.)
-        #
-        # Explicitly disable deprecation, so the damn thing will build
-        # on El Capitan with Xcode 7.
-        #
-        CFLAGS="$CFLAGS -Wno-deprecated-declarations -mmacosx-version-min=10.4 $SDKFLAGS" CXXFLAGS="$CXXFLAGS -mmacosx-version-min=10.4 $SDKFLAGS" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure --disable-mac-universal || exit 1
-        make $MAKE_BUILD_OPTS || exit 1
-        $DO_MAKE_INSTALL || exit 1
-        cd ..
-        touch portaudio-$PORTAUDIO_VERSION-done
-    fi
-}
-
-uninstall_portaudio() {
-    if [ ! -z "$installed_portaudio_version" ] ; then
-        echo "Uninstalling PortAudio:"
-        cd portaudio
-        $DO_MAKE_UNINSTALL || exit 1
-        make distclean || exit 1
-        cd ..
-        rm portaudio-$installed_portaudio_version-done
-
-        if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
-            #
-            # Get rid of the previously downloaded and unpacked version.
-            #
-            rm -rf portaudio
-            rm -rf $installed_portaudio_version.tgz
-        fi
-
-        installed_portaudio_version=""
-    fi
-}
-
 install_snappy() {
     if [ "$SNAPPY_VERSION" -a ! -f snappy-$SNAPPY_VERSION-done ] ; then
         echo "Downloading, building, and installing snappy:"
@@ -1687,67 +1389,42 @@ uninstall_sbc() {
     fi
 }
 
-install_geoip() {
-    if [ "$GEOIP_VERSION" -a ! -f geoip-$GEOIP_VERSION-done ] ; then
-        echo "Downloading, building, and installing GeoIP API:"
-        GEOIP_MAJOR_VERSION="`expr $GEOIP_VERSION : '\([0-9][0-9]*\).*'`"
-        GEOIP_MINOR_VERSION="`expr $GEOIP_VERSION : '[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
-        GEOIP_DOTDOT_VERSION="`expr $GEOIP_VERSION : '[0-9][0-9]*\.[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
-        if [[ $GEOIP_MAJOR_VERSION -gt 1 ||
-             ($GEOIP_MAJOR_VERSION -eq 1 && $GEOIP_MINOR_VERSION -gt 6) ||
-             ($GEOIP_MAJOR_VERSION -eq 1 && $GEOIP_MINOR_VERSION -eq 6 && $GEOIP_DOTDOT_VERSION -ge 1) ]]
-        then
-            #
-            # Starting with GeoIP 1.6.1, the tarballs are on GitHub.
-            #
-            [ -f GeoIP-$GEOIP_VERSION.tar.gz ] || curl -L -O https://github.com/maxmind/geoip-api-c/releases/download/v$GEOIP_VERSION/GeoIP-$GEOIP_VERSION.tar.gz || exit 1
-        else
-            [ -f GeoIP-$GEOIP_VERSION.tar.gz ] || curl -L -O http://geolite.maxmind.com/download/geoip/api/c/GeoIP-$GEOIP_VERSION.tar.gz || exit 1
-        fi
+install_maxminddb() {
+    if [ "$MAXMINDDB_VERSION" -a ! -f maxminddb-$MAXMINDDB_VERSION-done ] ; then
+        echo "Downloading, building, and installing MaxMindDB API:"
+        MAXMINDDB_MAJOR_VERSION="`expr $MAXMINDDB_VERSION : '\([0-9][0-9]*\).*'`"
+        MAXMINDDB_MINOR_VERSION="`expr $MAXMINDDB_VERSION : '[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
+        MAXMINDDB_DOTDOT_VERSION="`expr $MAXMINDDB_VERSION : '[0-9][0-9]*\.[0-9][0-9]*\.\([0-9][0-9]*\).*'`"
+        [ -f libmaxminddb-$MAXMINDDB_VERSION.tar.gz ] || curl -L -O https://github.com/maxmind/libmaxminddb/releases/download/$MAXMINDDB_VERSION/libmaxminddb-$MAXMINDDB_VERSION.tar.gz || exit 1
         $no_build && echo "Skipping installation" && return
-        gzcat GeoIP-$GEOIP_VERSION.tar.gz | tar xf - || exit 1
-        cd GeoIP-$GEOIP_VERSION
+        gzcat libmaxminddb-$MAXMINDDB_VERSION.tar.gz | tar xf - || exit 1
+        cd libmaxminddb-$MAXMINDDB_VERSION
         CFLAGS="$CFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" CXXFLAGS="$CXXFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" LDFLAGS="$LDFLAGS $VERSION_MIN_FLAGS $SDKFLAGS" ./configure || exit 1
-        #
-        # Grr.  Their man pages "helpfully" have an ISO 8859-1
-        # copyright symbol in the copyright notice, but macOS's
-        # default character encoding is UTF-8.  sed on Mountain
-        # Lion barfs at the "illegal character sequence" represented
-        # by an ISO 8859-1 copyright symbol, as it's not a valid
-        # UTF-8 sequence.
-        #
-        # iconv the relevant man pages into UTF-8.
-        #
-        for i in geoipupdate.1.in geoiplookup6.1.in geoiplookup.1.in
-        do
-            iconv -f iso8859-1 -t utf-8 man/"$i" >man/"$i".tmp &&
-                mv man/"$i".tmp man/"$i"
-        done
         make $MAKE_BUILD_OPTS || exit 1
         $DO_MAKE_INSTALL || exit 1
         cd ..
-        touch geoip-$GEOIP_VERSION-done
+        touch maxminddb-$MAXMINDDB_VERSION-done
     fi
 }
 
-uninstall_geoip() {
-    if [ ! -z "$installed_geoip_version" ] ; then
-        echo "Uninstalling GeoIP API:"
-        cd GeoIP-$installed_geoip_version
+uninstall_maxminddb() {
+    if [ ! -z "$installed_maxminddb_version" ] ; then
+        echo "Uninstalling MaxMindDB API:"
+        cd libmaxminddb-$installed_maxminddb_version
         $DO_MAKE_UNINSTALL || exit 1
         make distclean || exit 1
         cd ..
-        rm geoip-$installed_geoip_version-done
+        rm maxminddb-$installed_maxminddb_version-done
 
         if [ "$#" -eq 1 -a "$1" = "-r" ] ; then
             #
             # Get rid of the previously downloaded and unpacked version.
             #
-            rm -rf GeoIP-$installed_geoip_version
-            rm -rf GeoIP-$installed_geoip_version.tar.gz
+            rm -rf libmaxminddb-$installed_maxminddb_version
+            rm -rf libmaxminddb-$installed_maxminddb_version.tar.gz
         fi
 
-        installed_geoip_version=""
+        installed_maxminddb_version=""
     fi
 }
 
@@ -2056,15 +1733,15 @@ install_all() {
         uninstall_c_ares -r
     fi
 
-    if [ ! -z "$installed_geoip_version" -a \
-              "$installed_geoip_version" != "$GEOIP_VERSION" ] ; then
-        echo "Installed GeoIP API version is $installed_geoip_version"
-        if [ -z "$GEOIP_VERSION" ] ; then
-            echo "GeoIP is not requested"
+    if [ ! -z "$installed_maxminddb_version" -a \
+              "$installed_maxminddb_version" != "$MAXMINDDB_VERSION" ] ; then
+        echo "Installed MaxMindDB API version is $installed_maxminddb_version"
+        if [ -z "$MAXMINDDB_VERSION" ] ; then
+            echo "MaxMindDB is not requested"
         else
-            echo "Requested GeoIP version is $GEOIP_VERSION"
+            echo "Requested MaxMindDB version is $MAXMINDDB_VERSION"
         fi
-        uninstall_geoip -r
+        uninstall_maxminddb -r
     fi
 
     if [ ! -z "$installed_sbc_version" -a \
@@ -2109,17 +1786,6 @@ install_all() {
             echo "Requested SNAPPY version is $SNAPPY_VERSION"
         fi
         uninstall_snappy -r
-    fi
-
-    if [ ! -z "$installed_portaudio_version" -a \
-              "$installed_portaudio_version" != "$PORTAUDIO_VERSION" ] ; then
-        echo "Installed PortAudio version is $installed_portaudio_version"
-        if [ -z "$PORTAUDIO_VERSION" ] ; then
-            echo "PortAudio is not requested"
-        else
-            echo "Requested PortAudio version is $PORTAUDIO_VERSION"
-        fi
-        uninstall_portaudio -r
     fi
 
     if [ ! -z "$installed_lua_version" -a \
@@ -2199,83 +1865,6 @@ install_all() {
         uninstall_libsmi -r
     fi
 
-    if [ ! -z "$installed_gtk_version" -a \
-              "$installed_gtk_version" != "$GTK_VERSION" ] ; then
-        echo "Installed GTK+ version is $installed_gtk_version"
-        if [ -z "$GTK_VERSION" ] ; then
-            echo "GTK+ is not requested"
-        else
-            echo "Requested GTK+ version is $GTK_VERSION"
-        fi
-        uninstall_gtk -r
-    fi
-
-    if [ ! -z "$installed_gdk_pixbuf_version" -a \
-              "$installed_gdk_pixbuf_version" != "$GDK_PIXBUF_VERSION" ] ; then
-        echo "Installed gdk-pixbuf version is $installed_gdk_pixbuf_version"
-        if [ -z "$GDK_PIXBUF_VERSION" ] ; then
-            echo "gdk-pixbuf is not requested"
-        else
-            echo "Requested gdk-pixbuf version is $GDK_PIXBUF_VERSION"
-        fi
-        uninstall_gdk_pixbuf -r
-    fi
-
-    if [ ! -z "$installed_pango_version" -a \
-              "$installed_pango_version" != "$PANGO_VERSION" ] ; then
-        echo "Installed Pango version is $installed_pango_version"
-        if [ -z "$PANGO_VERSION" ] ; then
-            echo "Pango is not requested"
-        else
-            echo "Requested Pango version is $PANGO_VERSION"
-        fi
-        uninstall_pango -r
-    fi
-
-    if [ ! -z "$installed_atk_version" -a \
-              "$installed_atk_version" != "$ATK_VERSION" ] ; then
-        echo "Installed ATK version is $installed_atk_version"
-        if [ -z "$ATK_VERSION" ] ; then
-            echo "ATK is not requested"
-        else
-            echo "Requested ATK version is $ATK_VERSION"
-        fi
-        uninstall_atk -r
-    fi
-
-    if [ ! -z "$installed_cairo_version" -a \
-              "$installed_cairo_version" != "$CAIRO_VERSION" ] ; then
-        echo "Installed Cairo version is $installed_cairo_version"
-        if [ -z "$CAIRO_VERSION" ] ; then
-            echo "Cairo is not requested"
-        else
-            echo "Requested Cairo version is $CAIRO_VERSION"
-        fi
-        uninstall_cairo -r
-    fi
-
-    if [ ! -z "$installed_pixman_version" -a \
-              "$installed_pixman_version" != "$PIXMAN_VERSION" ] ; then
-        echo "Installed pixman version is $installed_pixman_version"
-        if [ -z "$PIXMAN_VERSION" ] ; then
-            echo "pixman is not requested"
-        else
-            echo "Requested pixman version is $PIXMAN_VERSION"
-        fi
-        uninstall_pixman -r
-    fi
-
-    if [ ! -z "$installed_libpng_version" -a \
-              "$installed_libpng_version" != "$PNG_VERSION" ] ; then
-        echo "Installed libpng version is $installed_libpng_version"
-        if [ -z "$PNG_VERSION" ] ; then
-            echo "libpng is not requested"
-        else
-            echo "Requested libpng version is $PNG_VERSION"
-        fi
-        uninstall_libpng -r
-    fi
-
     if [ ! -z "$installed_qt_version" -a \
               "$installed_qt_version" != "$QT_VERSION" ] ; then
         echo "Installed Qt version is $installed_qt_version"
@@ -2320,6 +1909,47 @@ install_all() {
         uninstall_gettext -r
     fi
 
+    if [ ! -z "$installed_ninja_version" -a \
+              "$installed_ninja_version" != "$NINJA_VERSION" ] ; then
+        echo "Installed Ninja version is $installed_ninja_version"
+        if [ -z "$NINJA_VERSION" ] ; then
+            echo "Ninja is not requested"
+        else
+            echo "Requested Ninja version is $NINJA_VERSION"
+        fi
+        uninstall_ninja -r
+    fi
+
+    if [ ! -z "$installed_asciidoctorpdf_version" -a \
+              "$installed_asciidoctorpdf_version" != "$ASCIIDOCTORPDF_VERSION" ] ; then
+        echo "Installed Asciidoctor-pdf version is $installed_asciidoctorpdf_version"
+        if [ -z "$ASCIIDOCTORPDF_VERSION" ] ; then
+            echo "Asciidoctor-pdf is not requested"
+        else
+            echo "Requested Asciidoctor-pdf version is $ASCIIDOCTORPDF_VERSION"
+        fi
+        # XXX - really remove this?
+        # Or should we remember it as installed only if this script
+        # installed it?
+        #
+        uninstall_asciidoctorpdf -r
+    fi
+
+    if [ ! -z "$installed_asciidoctor_version" -a \
+              "$installed_asciidoctor_version" != "$ASCIIDOCTOR_VERSION" ] ; then
+        echo "Installed Asciidoctor version is $installed_asciidoctor_version"
+        if [ -z "$ASCIIDOCTOR_VERSION" ] ; then
+            echo "Asciidoctor is not requested"
+        else
+            echo "Requested Asciidoctor version is $ASCIIDOCTOR_VERSION"
+        fi
+        # XXX - really remove this?
+        # Or should we remember it as installed only if this script
+        # installed it?
+        #
+        uninstall_asciidoctor -r
+    fi
+
     if [ ! -z "$installed_cmake_version" -a \
               "$installed_cmake_version" != "$CMAKE_VERSION" ] ; then
         echo "Installed CMake version is $installed_cmake_version"
@@ -2328,11 +1958,6 @@ install_all() {
         else
             echo "Requested CMake version is $CMAKE_VERSION"
         fi
-        #
-        # XXX - really remove this?
-        # Or should we remember it as installed only if this script
-        # installed it?
-        #
         uninstall_cmake -r
     fi
 
@@ -2391,8 +2016,24 @@ install_all() {
         uninstall_xz -r
     fi
 
+    if [ ! -z "$installed_curl_version" -a \
+              "$installed_curl_version" != "$CURL_VERSION" ] ; then
+        echo "Installed curl version is $installed_curl_version"
+        if [ -z "$CURL_VERSION" ] ; then
+            echo "curl is not requested"
+        else
+            echo "Requested curl version is $CURL_VERSION"
+        fi
+        uninstall_curl -r
+    fi
+
     #
-    # Start with xz: It is the sole download format of glib later than 2.31.2
+    # Start with curl: we may need it to download and install xz.
+    #
+    install_curl
+
+    #
+    # Now intall xz: it is the sole download format of glib later than 2.31.2.
     #
     install_xz
 
@@ -2405,6 +2046,12 @@ install_all() {
     install_libtool
 
     install_cmake
+
+    install_ninja
+
+    install_asciidoctor
+
+    install_asciidoctorpdf
 
     #
     # Start with GNU gettext; GLib requires it, and macOS doesn't have it
@@ -2434,63 +2081,11 @@ install_all() {
     #
     install_qt
 
-    if [ "$GTK_VERSION" ]; then
-        #
-        # GTK+ 3 requires a newer Cairo build than the one that comes with
-        # 10.6, so we build Cairo if we are using GTK+ 3.
-        #
-        # In 10.6 and 10.7, it's an X11 library; if we build with "native" GTK+
-        # rather than X11 GTK+, we might have to build and install Cairo.
-        # In 10.8 and later, there is no X11, but it's included in Xquartz;
-        # again, if we build with "native" GTK+, we'd have to build and install
-        # it.
-        #
-        if [[ "$GTK_MAJOR_VERSION" -eq 3 || "$cairo_not_in_the_os" = yes ]]; then
-            #
-            # Requirements for Cairo first
-            #
-            # The libpng that comes with the X11 for Leopard has a bogus
-            # pkg-config file that lies about where the header files are,
-            # which causes other packages not to be able to find its
-            # headers.
-            #
-            # The libpng in later versions is not what the version of
-            # libpixman we build below wants - it wants libpng15.
-            #
-            install_libpng
-
-            #
-            # The libpixman versions that come with the X11s for Leopard,
-            # Snow Leopard, and Lion is too old to support Cairo's image
-            # surface backend feature (which requires pixman-1 >= 0.22.0).
-            #
-            # XXX - what about the one that comes with the latest version
-            # of Xquartz?
-            #
-            install_pixman
-
-            #
-            # And now Cairo itself.
-            # XXX - with the libxcb that comes with 10.6,
-            # xcb_discard_reply() is missing, and the build fails.
-            #
-            install_cairo
-        fi
-
-        install_atk
-
-        install_pango
-
-        install_gdk_pixbuf
-
-        install_gtk
-    fi
-
     #
     # Now we have reached a point where we can build everything including
     # the GUI (Wireshark), but not with any optional features such as
     # SNMP OID resolution, some forms of decryption, Lua scripting, playback
-    # of audio, or GeoIP mapping of IP addresses.
+    # of audio, or MaxMindDB mapping of IP addresses.
     #
     # We now conditionally download optional libraries to support them;
     # the default is to download them all.
@@ -2510,8 +2105,6 @@ install_all() {
 
     install_lua
 
-    install_portaudio
-
     install_snappy
 
     install_libxml2
@@ -2520,7 +2113,7 @@ install_all() {
 
     install_sbc
 
-    install_geoip
+    install_maxminddb
 
     install_c_ares
 
@@ -2536,9 +2129,9 @@ install_all() {
 }
 
 uninstall_all() {
-    if [ -d macosx-support-libs ]
+    if [ -d "${MACOSX_SUPPORT_LIBS}" ]
     then
-        cd macosx-support-libs
+        cd "${MACOSX_SUPPORT_LIBS}"
 
         #
         # Uninstall items in the reverse order from the order in which they're
@@ -2549,11 +2142,11 @@ uninstall_all() {
         # We also do a "make distclean", so that we don't have leftovers from
         # old configurations.
         #
-	uninstall_bcg729
+        uninstall_bcg729
 
-	uninstall_spandsp
+        uninstall_spandsp
 
-	uninstall_libtiff
+        uninstall_libtiff
 
         uninstall_nghttp2
 
@@ -2561,9 +2154,7 @@ uninstall_all() {
 
         uninstall_c_ares
 
-        uninstall_geoip
-
-        uninstall_portaudio
+        uninstall_maxminddb
 
         uninstall_snappy
 
@@ -2587,20 +2178,6 @@ uninstall_all() {
 
         uninstall_libsmi
 
-        uninstall_gtk
-
-        uninstall_gdk_pixbuf
-
-        uninstall_pango
-
-        uninstall_atk
-
-        uninstall_cairo
-
-        uninstall_pixman
-
-        uninstall_libpng
-
         uninstall_qt
 
         uninstall_glib
@@ -2609,11 +2186,17 @@ uninstall_all() {
 
         uninstall_gettext
 
+        uninstall_ninja
+
         #
         # XXX - really remove this?
         # Or should we remember it as installed only if this script
         # installed it?
         #
+	uninstall_asciidoctorpdf
+
+	uninstall_asciidoctor
+
         uninstall_cmake
 
         uninstall_libtool
@@ -2625,6 +2208,8 @@ uninstall_all() {
         uninstall_lzip
 
         uninstall_xz
+
+        uninstall_curl
     fi
 }
 
@@ -2655,10 +2240,22 @@ fi
 # code will attempt to get you there, but is not perfect (particulary
 # if someone copies the script).
 
-dir=`dirname $0`
-cd $dir/..
+topdir=`pwd`/`dirname $0`/..
+cd $topdir
 
-# 
+# Preference of the support libraries directory:
+#   ${MACOSX_SUPPORT_LIBS}
+#   ../macosx-support-libs
+#   ./macosx-support-libs (default if none exists)
+if [ ! -d "${MACOSX_SUPPORT_LIBS}" ]; then
+  unset MACOSX_SUPPORT_LIBS
+fi
+if [ -d ../macosx-support-libs ]; then
+  MACOSX_SUPPORT_LIBS=${MACOSX_SUPPORT_LIBS-../macosx-support-libs}
+else
+  MACOSX_SUPPORT_LIBS=${MACOSX_SUPPORT_LIBS-./macosx-support-libs}
+fi
+
 #
 # If we have SDKs available, the default target OS is the major version
 # of the one we're running; get that and strip off the third component
@@ -2714,9 +2311,9 @@ done
 #
 # Get the version numbers of installed packages, if any.
 #
-if [ -d macosx-support-libs ]
+if [ -d "${MACOSX_SUPPORT_LIBS}" ]
 then
-    cd macosx-support-libs
+    cd "${MACOSX_SUPPORT_LIBS}"
 
     installed_xz_version=`ls xz-*-done 2>/dev/null | sed 's/xz-\(.*\)-done/\1/'`
     installed_lzip_version=`ls lzip-*-done 2>/dev/null | sed 's/lzip-\(.*\)-done/\1/'`
@@ -2724,17 +2321,13 @@ then
     installed_automake_version=`ls automake-*-done 2>/dev/null | sed 's/automake-\(.*\)-done/\1/'`
     installed_libtool_version=`ls libtool-*-done 2>/dev/null | sed 's/libtool-\(.*\)-done/\1/'`
     installed_cmake_version=`ls cmake-*-done 2>/dev/null | sed 's/cmake-\(.*\)-done/\1/'`
+    installed_ninja_version=`ls ninja-*-done 2>/dev/null | sed 's/ninja-\(.*\)-done/\1/'`
+    installed_asciidoctor_version=`ls asciidoctor-*-done 2>/dev/null | sed 's/asciidoctor-\(.*\)-done/\1/'`
+    installed_asciidoctorpdf_version=`ls asciidoctorpdf-*-done 2>/dev/null | sed 's/asciidoctorpdf-\(.*\)-done/\1/'`
     installed_gettext_version=`ls gettext-*-done 2>/dev/null | sed 's/gettext-\(.*\)-done/\1/'`
     installed_pkg_config_version=`ls pkg-config-*-done 2>/dev/null | sed 's/pkg-config-\(.*\)-done/\1/'`
     installed_glib_version=`ls glib-*-done 2>/dev/null | sed 's/glib-\(.*\)-done/\1/'`
     installed_qt_version=`ls qt-*-done 2>/dev/null | sed 's/qt-\(.*\)-done/\1/'`
-    installed_libpng_version=`ls libpng-*-done 2>/dev/null | sed 's/libpng-\(.*\)-done/\1/'`
-    installed_pixman_version=`ls pixman-*-done 2>/dev/null | sed 's/pixman-\(.*\)-done/\1/'`
-    installed_cairo_version=`ls cairo-*-done 2>/dev/null | sed 's/cairo-\(.*\)-done/\1/'`
-    installed_atk_version=`ls atk-*-done 2>/dev/null | sed 's/atk-\(.*\)-done/\1/'`
-    installed_pango_version=`ls pango-*-done 2>/dev/null | sed 's/pango-\(.*\)-done/\1/'`
-    installed_gdk_pixbuf_version=`ls gdk-pixbuf-*-done 2>/dev/null | sed 's/gdk-pixbuf-\(.*\)-done/\1/'`
-    installed_gtk_version=`ls gtk+-*-done 2>/dev/null | sed 's/gtk+-\(.*\)-done/\1/'`
     installed_libsmi_version=`ls libsmi-*-done 2>/dev/null | sed 's/libsmi-\(.*\)-done/\1/'`
     installed_libgpg_error_version=`ls libgpg-error-*-done 2>/dev/null | sed 's/libgpg-error-\(.*\)-done/\1/'`
     installed_libgcrypt_version=`ls libgcrypt-*-done 2>/dev/null | sed 's/libgcrypt-\(.*\)-done/\1/'`
@@ -2742,29 +2335,18 @@ then
     installed_nettle_version=`ls nettle-*-done 2>/dev/null | sed 's/nettle-\(.*\)-done/\1/'`
     installed_gnutls_version=`ls gnutls-*-done 2>/dev/null | sed 's/gnutls-\(.*\)-done/\1/'`
     installed_lua_version=`ls lua-*-done 2>/dev/null | sed 's/lua-\(.*\)-done/\1/'`
-    installed_portaudio_version=`ls portaudio-*-done 2>/dev/null | sed 's/portaudio-\(.*\)-done/\1/'`
     installed_snappy_version=`ls snappy-*-done 2>/dev/null | sed 's/snappy-\(.*\)-done/\1/'`
     installed_libxml2_version=`ls libxml2-*-done 2>/dev/null | sed 's/libxml2-\(.*\)-done/\1/'`
     installed_lz4_version=`ls lz4-*-done 2>/dev/null | sed 's/lz4-\(.*\)-done/\1/'`
     installed_sbc_version=`ls sbc-*-done 2>/dev/null | sed 's/sbc-\(.*\)-done/\1/'`
-    installed_geoip_version=`ls geoip-*-done 2>/dev/null | sed 's/geoip-\(.*\)-done/\1/'`
+    installed_maxminddb_version=`ls maxminddb-*-done 2>/dev/null | sed 's/maxminddb-\(.*\)-done/\1/'`
     installed_cares_version=`ls c-ares-*-done 2>/dev/null | sed 's/c-ares-\(.*\)-done/\1/'`
     installed_libssh_version=`ls libssh-*-done 2>/dev/null | sed 's/libssh-\(.*\)-done/\1/'`
     installed_nghttp2_version=`ls nghttp2-*-done 2>/dev/null | sed 's/nghttp2-\(.*\)-done/\1/'`
     installed_spandsp_version=`ls spandsp-*-done 2>/dev/null | sed 's/spandsp-\(.*\)-done/\1/'`
     installed_libtiff_version=`ls tiff-*-done 2>/dev/null | sed 's/tiff-\(.*\)-done/\1/'`
 
-    #
-    # If we don't have a versioned -done file for portaudio, but do have
-    # an unversioned -done file for it, assume the installed version is the
-    # requested version, and rename the -done file to include that version.
-    #
-    if [ -z "$installed_portaudio_version" -a -f portaudio-done ] ; then
-        mv portaudio-done portaudio-$PORTAUDIO_VERSION-done
-        installed_portaudio_version=`ls portaudio-*-done 2>/dev/null | sed 's/portaudio-\(.*\)-done/\1/'`
-    fi
-
-    cd ..
+    cd $topdir
 fi
 
 if [ "$do_uninstall" = "yes" ]
@@ -2782,21 +2364,6 @@ fi
 #
 CFLAGS="-g -O2"
 CXXFLAGS="-g -O2"
-
-#
-# To make this work on Leopard (rather than working *on* Snow Leopard
-# when building *for* Leopard) will take more work.
-#
-# For one thing, Leopard's /usr/X11/lib/libXdamage.la claims, at least
-# with all software updates applied, that the Xdamage shared library
-# is libXdamage.1.0.0.dylib, but it is, in fact, libXdamage.1.1.0.dylib.
-# This causes problems when building GTK+, so the script would have to
-# fix that file.
-#
-if [[ $DARWIN_MAJOR_VERSION -le 9 ]]; then
-    echo "This script does not support any versions of macOS before Snow Leopard" 1>&2
-    exit 1
-fi
 
 # if no make options are present, set default options
 if [ -z "$MAKE_BUILD_OPTS" ] ; then
@@ -2914,101 +2481,6 @@ then
     if [[ "$min_osx_target" == "10.5" ]]
     then
         #
-        # Cairo is part of Mac OS X 10.6 and later.
-        # The *headers* are supplied by 10.5, but the *libraries*
-        # aren't, so we have to build it if we're building for 10.5.
-        #
-        cairo_not_in_the_os=yes
-
-        #
-        # Build with older versions of the support libraries, as
-        # were used on the Wireshark Leopard buildbot at one
-        # point.  (Most of these versions come from the About page
-        # from Wireshark 1.8.6, the last build done on that buildbot;
-        # the ATK version isn't reported, so this is a guess.)
-        #
-        # If you want to try building with newer versions of
-        # the libraries, note that:
-        #
-        # The version of fontconfig that comes with Leopard doesn't
-        # support FC_WEIGHT_EXTRABLACK, so we can't use any version
-        # of Pango newer than 1.22.4.
-        #
-        # However, Pango 1.22.4 doesn't work with versions of GLib
-        # after 2.29.6, because Pango 1.22.4 uses G_CONST_RETURN and
-        # GLib 2.29.8 and later deprecate it (there doesn't appear to
-        # be a GLib 2.29.7).  That means we'd either have to patch
-        # Pango not to use it (just use "const"; G_CONST_RETURN was
-        # there to allow code to choose whether to use "const" or not),
-        # or use GLib 2.29.6 or earlier.
-        #
-        # GLib 2.29.6 includes an implementation of g_bit_lock() that,
-        # on x86 (32-bit and 64-bit), uses asms in a fashion
-        # ("asm volatile goto") that requires GCC 4.5 or later, which
-        # is later than the compilers that come with Leopard and Snow
-        # Leopard.  Recent versions of GLib check for that, but 2.29.6
-        # doesn't, so, if you want to build GLib 2.29.6 on Leopard or
-        # Snow Leopard, you would have to patch glib/gbitlock.c to do
-        # what the newer versions of GLib do:
-        #
-        #  define a USE_ASM_GOTO macro that indicates whether "asm goto"
-        #  can be used:
-        #    #if (defined (i386) || defined (__amd64__))
-        #      #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 5)
-        #        #define USE_ASM_GOTO 1
-        #      #endif
-        #    #endif
-        #
-        #  replace all occurrences of
-        #
-        #    #if defined (__GNUC__) && (defined (i386) || defined (__amd64__))
-        #
-        #  with
-        #
-        #    #ifdef USE_ASM_GOTO
-        #
-        # Using GLib 2.29.6 or earlier, however, means that we can't
-        # use a version of ATK later than 2.3.93, as those versions
-        # don't work with GLib 2.29.6.  The same applies to gdk-pixbuf;
-        # versions of gdk-pixbuf after 2.24.1 won't work with GLib
-        # 2.29.6.
-        #
-        # Then you have to make sure that what you've build doesn't
-        # cause the X server that comes with Leopard to crash; at
-        # least one attempt at building for Leopard did.
-        #
-        # At least if building on Leopard, you might also find
-        # that, with various older versions of Cairo, including
-        # 1.6.4 and at least some 1.8.x versions, when you try to
-        # build it, the build fails because it can't find
-        # png_set_longjmp_fn().  I vaguely remember dealing with that,
-        # ages ago, but don't remember what I did.
-        #
-        GLIB_VERSION=2.16.3
-        if [ "$CAIRO_VERSION" ]
-        then
-            CAIRO_VERSION=1.6.4
-        fi
-        if [ "$ATK_VERSION" ]
-        then
-            ATK_VERSION=1.24.0
-        fi
-        if [ "$PANGO_VERSION" ]
-        then
-            PANGO_VERSION=1.20.2
-        fi
-        if [ "$GTK_VERSION" ]
-        then
-            GTK_VERSION=2.12.9
-        fi
-
-        #
-        # That version of GTK+ includes gdk-pixbuf.
-        # XXX - base this on the version of GTK+ requested.
-        #
-        GDK_PIXBUF_VERSION=
-
-        #
         # Libgcrypt 1.5.0 fails to compile due to some problem with an
         # asm in rijndael.c, at least with i686-apple-darwin10-gcc-4.2.1
         # (GCC) 4.2.1 (Apple Inc. build 5666) (dot 3) when building
@@ -3059,33 +2531,18 @@ if [ "$QT_VERSION" ]; then
         exit 1
     fi
 fi
-if [ "$GTK_VERSION" ]; then
-    #
-    # If we're building with GTK+, you also need the X11 SDK; with at least
-    # some versions of macOS and Xcode, that is, I think, an optional install.
-    # (Or it might be installed with X11, but I think *that* is an optional
-    # install on at least some versions of macOS.)
-    #
-    if [ ! -d /usr/X11/include ]; then
-        echo "Please install X11 and the X11 SDK first."
-        echo "  You can either download the latest package from"
-        echo "  http://www.xquartz.org/ and install it or install"
-        echo "  the native Apple package if you are on Lion or below."
-        exit 1
-    fi
-fi
 
-export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/X11/lib/pkgconfig
+export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 
 #
 # Do all the downloads and untarring in a subdirectory, so all that
 # stuff can be removed once we've installed the support libraries.
-#
-if [ ! -d macosx-support-libs ]
+
+if [ ! -d "${MACOSX_SUPPORT_LIBS}" ]
 then
-    mkdir macosx-support-libs || exit 1
+    mkdir "${MACOSX_SUPPORT_LIBS}" || exit 1
 fi
-cd macosx-support-libs
+cd "${MACOSX_SUPPORT_LIBS}"
 
 install_all
 
@@ -3100,9 +2557,6 @@ if [ "$QT_VERSION" ]; then
     pkg_config_path="$pkg_config_path":"$qt_base_path/lib/pkgconfig"
     CMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH":"$qt_base_path/lib/cmake"
 fi
-if [ "$GTK_VERSION" ]; then
-    pkg_config_path="$pkg_config_path":/usr/X11/lib/pkgconfig
-fi
 
 if $no_build; then
     echo "All required dependencies downloaded. Run without -n to install them."
@@ -3111,31 +2565,22 @@ fi
 
 echo "You are now prepared to build Wireshark."
 echo
-if [[ $CMAKE ]]; then
-    echo "To build with CMAKE:"
-    echo
-    echo "export PKG_CONFIG_PATH=$pkg_config_path"
-    echo "export CMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH"
-    echo "export PATH=$PATH:$qt_base_path/bin"
-    echo
-    echo "mkdir build; cd build"
-    echo "cmake .."
+echo "To build:"
+echo
+echo "export PKG_CONFIG_PATH=$pkg_config_path"
+echo "export CMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH"
+echo "export PATH=$PATH:$qt_base_path/bin"
+echo
+echo "mkdir build; cd build"
+echo "cmake .."
+if [ ! -z "$NINJA_VERSION" ]; then
+    echo "ninja app_bundle"
+    echo "ninja install/strip"
+else
     echo "make $MAKE_BUILD_OPTS app_bundle"
     echo "make install/strip"
-    echo
 fi
-if [[ $AUTOTOOLS ]]; then
-    echo "To build with AUTOTOOLS:"
-    echo
-    echo "export PKG_CONFIG_PATH=$pkg_config_path"
-    echo
-    echo "./autogen.sh"
-    echo "mkdir build; cd build"
-    echo "../configure"
-    echo "make $MAKE_BUILD_OPTS"
-    echo "make install"
-    echo
-fi
+echo
 echo "Make sure you are allowed capture access to the network devices"
 echo "See: https://wiki.wireshark.org/CaptureSetup/CapturePrivileges"
 echo

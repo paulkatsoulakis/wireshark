@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef RTP_ANALYSIS_DIALOG_H
 #define RTP_ANALYSIS_DIALOG_H
@@ -16,6 +17,7 @@
 #include "epan/address.h"
 
 #include "ui/rtp_stream.h"
+#include "ui/tap-rtp-common.h"
 #include "ui/tap-rtp-analysis.h"
 
 #include <QAbstractButton>
@@ -31,19 +33,12 @@ class RtpAnalysisDialog;
 class QCPGraph;
 class QTemporaryFile;
 
-typedef enum {
-    TAP_RTP_NO_ERROR,
-    TAP_RTP_WRONG_LENGTH,
-    TAP_RTP_PADDING_ERROR,
-    TAP_RTP_FILE_IO_ERROR
-} rtp_error_type_t;
-
 class RtpAnalysisDialog : public WiresharkDialog
 {
     Q_OBJECT
 
 public:
-    explicit RtpAnalysisDialog(QWidget &parent, CaptureFile &cf, struct _rtp_stream_info *stream_fwd = 0, struct _rtp_stream_info *stream_rev = 0);
+    explicit RtpAnalysisDialog(QWidget &parent, CaptureFile &cf, rtpstream_info_t *stream_fwd = 0, rtpstream_info_t *stream_rev = 0);
     ~RtpAnalysisDialog();
 
 signals:
@@ -87,30 +82,10 @@ private:
     enum StreamDirection { dir_both_, dir_forward_, dir_reverse_ };
     enum SyncType { sync_unsync_, sync_sync_stream_, sync_sync_file_ };
 
-    // XXX These are copied to and from rtp_stream_info_t structs. Should
-    // we just have a pair of those instead?
-    address src_fwd_;
-    guint32 port_src_fwd_;
-    address dst_fwd_;
-    guint32 port_dst_fwd_;
-    guint32 ssrc_fwd_;
-    guint32 packet_count_fwd_;
-    guint32 setup_frame_number_fwd_;
-    nstime_t start_rel_time_fwd_;
-
-    address src_rev_;
-    guint32 port_src_rev_;
-    address dst_rev_;
-    guint32 port_dst_rev_;
-    guint32 ssrc_rev_;
-    guint32 packet_count_rev_;
-    guint32 setup_frame_number_rev_;
-    nstime_t start_rel_time_rev_;
-
     int num_streams_;
 
-    tap_rtp_stat_t fwd_statinfo_;
-    tap_rtp_stat_t rev_statinfo_;
+    rtpstream_info_t fwd_statinfo_;
+    rtpstream_info_t rev_statinfo_;
 
     QPushButton *player_button_;
 
@@ -131,7 +106,7 @@ private:
 
     rtpstream_tapinfo_t tapinfo_;
     QString err_str_;
-    rtp_error_type_t save_payload_error_;
+    tap_rtp_error_type_t save_payload_error_;
 
     QMenu stream_ctx_menu_;
     QMenu graph_ctx_menu_;

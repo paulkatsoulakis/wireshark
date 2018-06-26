@@ -33,8 +33,8 @@
 class BoolPreferenceAction : public QAction
 {
 public:
-    BoolPreferenceAction(pref_t *pref) :
-        QAction(NULL),
+    BoolPreferenceAction(pref_t *pref, QObject *parent=0) :
+        QAction(parent),
         pref_(pref)
     {
         setText(prefs_get_title(pref_));
@@ -53,8 +53,8 @@ private:
 class EnumPreferenceAction : public QAction
 {
 public:
-    EnumPreferenceAction(pref_t *pref, const char *title, int enumval, QActionGroup *ag) :
-        QAction(NULL),
+    EnumPreferenceAction(pref_t *pref, const char *title, int enumval, QActionGroup *ag, QObject *parent=0) :
+        QAction(parent),
         pref_(pref),
         enumval_(enumval)
     {
@@ -75,8 +75,8 @@ private:
 class UatPreferenceAction : public QAction
 {
 public:
-    UatPreferenceAction(pref_t *pref) :
-        QAction(NULL),
+    UatPreferenceAction(pref_t *pref, QObject *parent=0) :
+        QAction(parent),
         pref_(pref)
     {
         setText(QString("%1" UTF8_HORIZONTAL_ELLIPSIS).arg(prefs_get_title(pref_)));
@@ -98,8 +98,8 @@ private:
 class EditorPreferenceAction : public QAction
 {
 public:
-    EditorPreferenceAction(pref_t *pref) :
-        QAction(NULL),
+    EditorPreferenceAction(pref_t *pref, QObject *parent=0) :
+        QAction(parent),
         pref_(pref)
     {
         QString title = prefs_get_title(pref_);
@@ -191,22 +191,26 @@ void ProtocolPreferencesMenu::addMenuItem(preference *pref)
     switch (prefs_get_type(pref)) {
     case PREF_BOOL:
     {
-        BoolPreferenceAction *bpa = new BoolPreferenceAction(pref);
+        BoolPreferenceAction *bpa = new BoolPreferenceAction(pref, this);
         addAction(bpa);
         connect(bpa, SIGNAL(triggered(bool)), this, SLOT(boolPreferenceTriggered()));
         break;
     }
     case PREF_ENUM:
     {
-        QActionGroup *ag = new QActionGroup(this);
         QMenu *enum_menu = addMenu(prefs_get_title(pref));
-        for (const enum_val_t *enum_valp = prefs_get_enumvals(pref); enum_valp->name; enum_valp++) {
-            EnumPreferenceAction *epa = new EnumPreferenceAction(pref, enum_valp->description, enum_valp->value, ag);
-            if (prefs_get_enum_value(pref, pref_current) == enum_valp->value) {
-                epa->setChecked(true);
+        const enum_val_t *enum_valp = prefs_get_enumvals(pref);
+        if (enum_valp && enum_valp->name) {
+            QActionGroup *ag = new QActionGroup(this);
+            while (enum_valp->name) {
+                EnumPreferenceAction *epa = new EnumPreferenceAction(pref, enum_valp->description, enum_valp->value, ag, this);
+                if (prefs_get_enum_value(pref, pref_current) == enum_valp->value) {
+                    epa->setChecked(true);
+                }
+                enum_menu->addAction(epa);
+                connect(epa, SIGNAL(triggered(bool)), this, SLOT(enumPreferenceTriggered()));
+                enum_valp++;
             }
-            enum_menu->addAction(epa);
-            connect(epa, SIGNAL(triggered(bool)), this, SLOT(enumPreferenceTriggered()));
         }
         break;
     }
@@ -216,14 +220,14 @@ void ProtocolPreferencesMenu::addMenuItem(preference *pref)
     case PREF_DECODE_AS_UINT:
     case PREF_DECODE_AS_RANGE:
     {
-        EditorPreferenceAction *epa = new EditorPreferenceAction(pref);
+        EditorPreferenceAction *epa = new EditorPreferenceAction(pref, this);
         addAction(epa);
         connect(epa, SIGNAL(triggered(bool)), this, SLOT(editorPreferenceTriggered()));
         break;
     }
     case PREF_UAT:
     {
-        UatPreferenceAction *upa = new UatPreferenceAction(pref);
+        UatPreferenceAction *upa = new UatPreferenceAction(pref, this);
         addAction(upa);
         connect(upa, SIGNAL(triggered(bool)), this, SLOT(uatPreferenceTriggered()));
         break;

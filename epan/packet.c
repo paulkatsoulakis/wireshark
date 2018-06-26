@@ -139,8 +139,7 @@ destroy_depend_dissector_list(void *data)
 	depend_dissector_list_t dissector_list = (depend_dissector_list_t)data;
 	GSList **list = &(dissector_list->dissectors);
 
-	g_slist_foreach(*list, (GFunc)g_free, NULL);
-	g_slist_free(*list);
+	g_slist_free_full(*list, g_free);
 	g_slice_free(struct depend_dissector_list, dissector_list);
 }
 
@@ -158,7 +157,7 @@ static GHashTable *heur_dissector_lists = NULL;
 static GHashTable* heuristic_short_names  = NULL;
 
 static void
-destroy_heuristic_dissector_entry(gpointer data, gpointer user_data _U_)
+destroy_heuristic_dissector_entry(gpointer data)
 {
 	heur_dtbl_entry_t *hdtbl_entry = (heur_dtbl_entry_t *)data;
 	g_free(hdtbl_entry->list_name);
@@ -172,8 +171,7 @@ destroy_heuristic_dissector_list(void *data)
 	heur_dissector_list_t dissector_list = (heur_dissector_list_t)data;
 	GSList **list = &(dissector_list->dissectors);
 
-	g_slist_foreach(*list, destroy_heuristic_dissector_entry, NULL);
-	g_slist_free(*list);
+	g_slist_free_full(*list, destroy_heuristic_dissector_entry);
 	g_slice_free(struct heur_dissector_list, dissector_list);
 }
 
@@ -639,7 +637,7 @@ dissect_file(epan_dissect_t *edt, wtap_rec *rec,
 	CATCH(BoundsError) {
 		g_assert_not_reached();
 	}
-	CATCH2(FragmentBoundsError, ReportedBoundsError) {
+	CATCH3(FragmentBoundsError, ContainedBoundsError, ReportedBoundsError) {
 		proto_tree_add_protocol_format(edt->tree, proto_malformed, edt->tvb, 0, 0,
 					       "[Malformed Record: Packet Length]");
 	}
@@ -876,7 +874,7 @@ call_dissector_work_error(dissector_handle_t handle, tvbuff_t *tvb,
 		*/
 		RETHROW;
 	}
-	CATCH2(FragmentBoundsError, ReportedBoundsError) {
+	CATCH3(FragmentBoundsError, ContainedBoundsError, ReportedBoundsError) {
 		/*
 		* "ret" wasn't set because an exception was thrown
 		* before "call_dissector_through_handle()" returned.
@@ -2068,7 +2066,7 @@ dissector_table_get_dissector_handles(dissector_table_t dissector_table) {
  * Data structure used as user data when iterating dissector handles
  */
 typedef struct lookup_entry {
-	gchar*             dissector_short_name;
+	const gchar* dissector_short_name;
 	dissector_handle_t handle;
 } lookup_entry_t;
 
@@ -2087,7 +2085,7 @@ find_dissector_in_table(gpointer item, gpointer user_data)
 	}
 }
 
-dissector_handle_t dissector_table_get_dissector_handle(dissector_table_t dissector_table, gchar* short_name)
+dissector_handle_t dissector_table_get_dissector_handle(dissector_table_t dissector_table, const gchar* short_name)
 {
 	lookup_entry_t lookup;
 

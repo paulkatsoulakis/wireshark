@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <epan/epan_dissect.h>
 #include "epan/epan.h"
@@ -41,7 +42,10 @@ void FrameInformation::loadFrameTree()
         return;
 
     wtap_rec rec_ = cap_file_->capFile()->rec;
+
+#ifndef __clang_analyzer__
     packet_data_ = (guint8 *) g_memdup(ws_buffer_start_ptr(&(cap_file_->capFile()->buf)), fi_->cap_len);
+#endif
 
     /* proto tree, visible. We need a proto tree if there's custom columns */
     epan_dissect_init(&edt_, cap_file_->capFile()->epan, TRUE, TRUE);
@@ -56,7 +60,7 @@ void FrameInformation::loadFrameTree()
 FrameInformation::~FrameInformation()
 {
     epan_dissect_cleanup(&edt_);
-    delete(packet_data_);
+    g_free(packet_data_);
 }
 
 bool FrameInformation::isValid()

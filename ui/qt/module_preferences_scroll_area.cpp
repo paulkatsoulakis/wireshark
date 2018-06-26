@@ -4,11 +4,13 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "module_preferences_scroll_area.h"
 #include <ui_module_preferences_scroll_area.h>
 #include <ui/qt/widgets/syntax_line_edit.h>
+#include "ui/qt/widgets/wireshark_file_dialog.h"
 #include <ui/qt/utils/qt_ui_utils.h>
 #include "uat_dialog.h"
 #include "wireshark_application.h"
@@ -23,7 +25,6 @@
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
-#include <QFileDialog>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -87,14 +88,16 @@ pref_show(pref_t *pref, gpointer layout_ptr)
     case PREF_ENUM:
     {
         const enum_val_t *ev;
-        if (prefs_get_enumvals(pref) == NULL) return 0;
+        ev = prefs_get_enumvals(pref);
+        if (!ev || !ev->description)
+            return 0;
 
         if (prefs_get_enum_radiobuttons(pref)) {
             QLabel *label = new QLabel(prefs_get_title(pref));
             label->setToolTip(tooltip);
             vb->addWidget(label);
             QButtonGroup *enum_bg = new QButtonGroup(vb);
-            for (ev = prefs_get_enumvals(pref); ev && ev->description; ev++) {
+            while (ev->description) {
                 QRadioButton *enum_rb = new QRadioButton(title_to_shortcut(ev->description));
                 enum_rb->setToolTip(tooltip);
                 QStyleOption style_opt;
@@ -107,6 +110,7 @@ pref_show(pref_t *pref, gpointer layout_ptr)
                                   .arg(enum_rb->style()->subElementRect(QStyle::SE_CheckBoxContents, &style_opt).left()));
                 enum_bg->addButton(enum_rb, ev->value);
                 vb->addWidget(enum_rb);
+                ev++;
             }
         } else {
             QHBoxLayout *hb = new QHBoxLayout();
@@ -483,7 +487,7 @@ void ModulePreferencesScrollArea::saveFilenamePushButtonPressed()
     pref_t *pref = VariantPointer<pref_t>::asPtr(filename_pb->property(pref_prop_));
     if (!pref) return;
 
-    QString filename = QFileDialog::getSaveFileName(this, wsApp->windowTitleString(prefs_get_title(pref)),
+    QString filename = WiresharkFileDialog::getSaveFileName(this, wsApp->windowTitleString(prefs_get_title(pref)),
                                                     prefs_get_string_value(pref, pref_stashed));
 
     if (!filename.isEmpty()) {
@@ -500,7 +504,7 @@ void ModulePreferencesScrollArea::openFilenamePushButtonPressed()
     pref_t *pref = VariantPointer<pref_t>::asPtr(filename_pb->property(pref_prop_));
     if (!pref) return;
 
-    QString filename = QFileDialog::getOpenFileName(this, wsApp->windowTitleString(prefs_get_title(pref)),
+    QString filename = WiresharkFileDialog::getOpenFileName(this, wsApp->windowTitleString(prefs_get_title(pref)),
                                                     prefs_get_string_value(pref, pref_stashed));
     if (!filename.isEmpty()) {
         prefs_set_string_value(pref, QDir::toNativeSeparators(filename).toStdString().c_str(), pref_stashed);
@@ -516,7 +520,7 @@ void ModulePreferencesScrollArea::dirnamePushButtonPressed()
     pref_t *pref = VariantPointer<pref_t>::asPtr(dirname_pb->property(pref_prop_));
     if (!pref) return;
 
-    QString dirname = QFileDialog::getExistingDirectory(this, wsApp->windowTitleString(prefs_get_title(pref)),
+    QString dirname = WiresharkFileDialog::getExistingDirectory(this, wsApp->windowTitleString(prefs_get_title(pref)),
                                                  prefs_get_string_value(pref, pref_stashed));
 
     if (!dirname.isEmpty()) {

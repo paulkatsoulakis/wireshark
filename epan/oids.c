@@ -30,6 +30,7 @@
 #ifdef HAVE_LIBSMI
 #include <smi.h>
 
+static gboolean smi_init_done = FALSE;
 static gboolean oids_init_done = FALSE;
 static gboolean load_smi_modules = FALSE;
 static gboolean suppress_smi_errors = FALSE;
@@ -533,14 +534,13 @@ static void register_mibs(void) {
 	if (oids_init_done) {
 		D(1,("Exiting register_mibs() to avoid double registration of MIBs proto."));
 		return;
-	} else {
-		oids_init_done = TRUE;
 	}
 
 	hfa = wmem_array_new(wmem_epan_scope(), sizeof(hf_register_info));
 	etta = g_array_new(FALSE,TRUE,sizeof(gint*));
 
 	smiInit(NULL);
+	smi_init_done = TRUE;
 
 	smi_errors = g_string_new("");
 	smiSetErrorHandler(smi_error_handler);
@@ -660,8 +660,7 @@ static void register_mibs(void) {
 						}
 					}
 
-					hf.hfinfo.strings = vals->data;
-					g_array_free(vals,FALSE);
+					hf.hfinfo.strings = g_array_free(vals, FALSE);
 				}
 #if 0 /* packet-snmp does not handle bits yet */
 			} else if (smiType->basetype == SMI_BASETYPE_BITS && ( smiEnum = smiGetFirstNamedNumber(smiType) )) {
@@ -734,6 +733,8 @@ static void register_mibs(void) {
 	proto_register_subtree_array((gint**)(void*)etta->data, etta->len);
 
 	g_array_free(etta,TRUE);
+
+	oids_init_done = TRUE;
 }
 #endif
 
@@ -937,6 +938,7 @@ guint oid_string2subid(wmem_allocator_t *scope, const char* str, guint32** subid
 			subid += *r - '0';
 
 			if( subids >= subids_overflow ||  subid > 0xffffffff) {
+				wmem_free(scope, *subids_p);
 				*subids_p=NULL;
 				return 0;
 			}
@@ -1262,10 +1264,9 @@ oid_get_default_mib_path(void) {
 
 	if (!load_smi_modules) {
 		D(1,("OID resolution not enabled"));
-		return path_str->str;
+		return g_string_free(path_str, FALSE);
 	}
 #ifdef _WIN32
-#define PATH_SEPARATOR ";"
 	path = get_datafile_path("snmp\\mibs");
 	g_string_append_printf(path_str, "%s;", path);
 	g_free (path);
@@ -1274,23 +1275,28 @@ oid_get_default_mib_path(void) {
 	g_string_append_printf(path_str, "%s", path);
 	g_free (path);
 #else
-#define PATH_SEPARATOR ":"
-	path = smiGetPath();
 	g_string_append(path_str, "/usr/share/snmp/mibs");
+	if (!smi_init_done)
+		smiInit(NULL);
+	path = smiGetPath();
 	if (strlen(path) > 0 ) {
-		g_string_append(path_str, PATH_SEPARATOR);
+		g_string_append(path_str, G_SEARCHPATH_SEPARATOR_S);
+		g_string_append_printf(path_str, "%s", path);
 	}
-	g_string_append_printf(path_str, "%s", path);
 	smi_free(path);
+
+	if (oids_init_done == FALSE)
+	{
 #endif
+		for (i = 0; i < num_smi_paths; i++) {
+			if (!(smi_paths[i].name && *smi_paths[i].name))
+				continue;
 
-	for(i=0;i<num_smi_paths;i++) {
-		if (!( smi_paths[i].name && *smi_paths[i].name))
-			continue;
-
-		g_string_append_printf(path_str,PATH_SEPARATOR "%s",smi_paths[i].name);
+			g_string_append_printf(path_str, G_SEARCHPATH_SEPARATOR_S "%s", smi_paths[i].name);
+		}
+#ifndef _WIN32
 	}
-
+#endif
 	return g_string_free(path_str, FALSE);
 #else /* HAVE_LIBSMI */
         return g_strdup("");

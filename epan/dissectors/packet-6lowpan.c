@@ -550,6 +550,7 @@ static const gchar *        lowpan_context_prefs[LOWPAN_CONTEXT_MAX];
 
 /* Preferences */
 static gboolean rfc4944_short_address_format = FALSE;
+static gboolean iid_has_universal_local_bit = FALSE;
 
 /* Helper macro to convert a bit offset/length into a byte count. */
 #define BITS_TO_BYTE_LEN(bitoff, bitlen)    ((bitlen)?(((bitlen) + ((bitoff)&0x07) + 7) >> 3):(0))
@@ -595,7 +596,7 @@ static gboolean     lowpan_dlsrc_to_ifcid   (packet_info *pinfo, guint8 *ifcid);
 static gboolean     lowpan_dldst_to_ifcid   (packet_info *pinfo, guint8 *ifcid);
 static void         lowpan_addr16_to_ifcid  (guint16 addr, guint8 *ifcid);
 static void         lowpan_addr16_with_panid_to_ifcid(guint16 panid, guint16 addr, guint8 *ifcid);
-static void         lowpan_addr48_to_ifcid    (guint8 *addr, guint8 *ifcid);
+static void         lowpan_addr48_to_ifcid  (const guint8 *addr, guint8 *ifcid);
 static tvbuff_t *   lowpan_reassemble_ipv6  (tvbuff_t *tvb, packet_info *pinfo, struct ws_ip6_hdr *ipv6, struct lowpan_nhdr *nhdr_list);
 static guint8       lowpan_parse_nhc_proto  (tvbuff_t *tvb, gint offset);
 
@@ -841,13 +842,13 @@ lowpan_addr16_with_panid_to_ifcid(guint16 panid, guint16 addr, guint8 *ifcid)
  *---------------------------------------------------------------
  */
 static void
-lowpan_addr48_to_ifcid(guint8 *addr, guint8 *ifcid)
+lowpan_addr48_to_ifcid(const guint8 *addr, guint8 *ifcid)
 {
     static const guint8 unknown_addr[] = { 0, 0, 0, 0, 0, 0 };
 
     /* Don't convert unknown addresses */
-    if (memcmp (addr, unknown_addr, sizeof(unknown_addr)) != 0) {
-        ifcid[0] = addr[0] | 0x02; /* Set the U/L bit. */
+    if (memcmp(addr, unknown_addr, sizeof(unknown_addr)) != 0) {
+        ifcid[0] = addr[0];
         ifcid[1] = addr[1];
         ifcid[2] = addr[2];
         ifcid[3] = 0xff;
@@ -855,6 +856,9 @@ lowpan_addr48_to_ifcid(guint8 *addr, guint8 *ifcid)
         ifcid[5] = addr[3];
         ifcid[6] = addr[4];
         ifcid[7] = addr[5];
+        if (iid_has_universal_local_bit) {
+            ifcid[0] ^= 0x02; /* Invert the U/L bit. */
+        }
     } else {
         memset(ifcid, 0, LOWPAN_IFC_ID_LEN);
     }
@@ -886,7 +890,7 @@ lowpan_dlsrc_to_ifcid(packet_info *pinfo, guint8 *ifcid)
         ifcid[0] ^= 0x02;
         return TRUE;
     } else if (pinfo->dl_src.type == AT_ETHER) {
-        lowpan_addr48_to_ifcid((guint8 *)pinfo->dl_src.data, ifcid);
+        lowpan_addr48_to_ifcid((const guint8 *)pinfo->dl_src.data, ifcid);
         return TRUE;
     }
 
@@ -936,7 +940,7 @@ lowpan_dldst_to_ifcid(packet_info *pinfo, guint8 *ifcid)
         ifcid[0] ^= 0x02;
         return TRUE;
     } else if (pinfo->dl_dst.type == AT_ETHER) {
-        lowpan_addr48_to_ifcid((guint8 *)pinfo->dl_dst.data, ifcid);
+        lowpan_addr48_to_ifcid((const guint8 *)pinfo->dl_dst.data, ifcid);
         return TRUE;
     }
 
@@ -1052,6 +1056,45 @@ lowpan_parse_nhc_proto(tvbuff_t *tvb, gint offset)
     /* Unknown header type. */
     return IP_PROTO_NONE;
 } /* lowpan_parse_nhc_proto */
+
+/*FUNCTION:------------------------------------------------------
+ *  NAME
+ *      lowpan_reassembly_id
+ *  DESCRIPTION
+ *      Creates an identifier that groups fragments based on the given datagram
+ *      tag and the link layer destination address (to differentiate packets
+ *      forwarded over different links in a mesh network).
+ *  PARAMETERS
+ *      pinfo           : packet info.
+ *      dgram_tag       ; datagram tag (from the Fragmentation Header).
+ *  RETURNS
+ *      guint32         ; identifier for this group of fragments.
+ *---------------------------------------------------------------
+ */
+static guint32
+lowpan_reassembly_id(packet_info *pinfo, guint16 dgram_tag)
+{
+    /* Start with the datagram tag for identification. If the packet is not
+     * being forwarded, then this should be sufficient to prevent collisions
+     * which could break reassembly. */
+    guint32     frag_id = dgram_tag;
+    ieee802154_hints_t  *hints;
+
+    /* Forwarded packets in a mesh network have the same datagram tag, mix
+     * the IEEE 802.15.4 destination link layer address. */
+    if (pinfo->dl_dst.type == AT_EUI64) {
+        /* IEEE 64-bit extended address */
+        frag_id = add_address_to_hash(frag_id, &pinfo->dl_dst);
+    } else {
+        /* 16-bit short address */
+        hints = (ieee802154_hints_t *)p_get_proto_data(wmem_file_scope(), pinfo,
+                    proto_get_id_by_filter_name(IEEE802154_PROTOABBREV_WPAN), 0);
+        if (hints) {
+            frag_id |= hints->dst16 << 16;
+        }
+    }
+    return frag_id;
+} /* lowpan_reassembly_id */
 
 /*FUNCTION:------------------------------------------------------
  *  NAME
@@ -1281,10 +1324,8 @@ dissect_6lowpan_6loRH(tvbuff_t *tvb, guint offset, proto_tree *tree)
                     }
                     else if (loRHE_type == LOWPAN_IP_IN_IP_6LORH) {
                         memset(&ipv6.ip6h_src, 0, sizeof(ipv6.ip6h_src));
-                        proto_tree_add_item(loRH_tree, hf_6lowpan_6lorhe_length, tvb, offset, 2,
-                                            loRH_flags & LOWPAN_PATTERN_6LORHE_LENGTH);
-                        proto_tree_add_item(loRH_tree, hf_6lowpan_6lorhe_type, tvb, offset, 2,
-                                            loRHE_type);
+                        proto_tree_add_item(loRH_tree, hf_6lowpan_6lorhe_length, tvb, offset, 2, ENC_BIG_ENDIAN);
+                        proto_tree_add_item(loRH_tree, hf_6lowpan_6lorhe_type, tvb, offset, 2, ENC_BIG_ENDIAN);
                         proto_tree_add_item(loRH_tree, hf_6lowpan_6lorhe_hoplimit, tvb, offset + 2, 1, ENC_BIG_ENDIAN);
 
                         if (loRHE_length > 1) {
@@ -2398,7 +2439,7 @@ dissect_6lowpan_iphc_nhc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, gi
         guint16         udp_src_port, udp_dst_port;
 
         /* Create a tree for the UDP header. */
-        nhc_tree = proto_tree_add_subtree(tree, tvb, 0, 1, ett_6lowpan_nhc_udp, NULL, "UDP header compression");
+        nhc_tree = proto_tree_add_subtree(tree, tvb, offset, 1, ett_6lowpan_nhc_udp, NULL, "UDP header compression");
         /* Display the UDP NHC ID pattern. */
         proto_tree_add_bits_item(nhc_tree, hf_6lowpan_nhc_pattern, tvb, offset<<3, LOWPAN_NHC_PATTERN_UDP_BITS, ENC_BIG_ENDIAN);
 
@@ -2457,7 +2498,8 @@ dissect_6lowpan_iphc_nhc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, gi
             offset += 2;
         }
         else {
-            udp.checksum = 0;
+            /* Checksum must be != 0 or the UDP dissector will flag the packet with a PI_ERROR */
+            udp.checksum = 0xffff;
         }
 
         /* Compute the datagram length. */
@@ -2475,7 +2517,7 @@ dissect_6lowpan_iphc_nhc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, gi
          * disallows sending UDP datagrams without checksums. Likewise, 6LoWPAN
          * requires that we recompute the checksum.
          *
-         * If the datagram is incomplete, then leave the checksum at 0.
+         * If the datagram is incomplete, then leave the checksum at 0xffff.
          */
 #if 0
         /*
@@ -2485,7 +2527,8 @@ dissect_6lowpan_iphc_nhc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, gi
          *
          * If we want to display the checksums, they will have to be recomputed
          * after packet reassembly. Lots of work for not much gain, since we can
-         * just set the UDP checksum to 0 and Wireshark doesn't care.
+         * just set the UDP checksum to 0xffff (anything != 0) and Wireshark
+         * doesn't care.
          */
         if ((udp_flags & LOWPAN_NHC_UDP_CHECKSUM) && tvb_bytes_exist(tvb, offset, length)) {
             vec_t      cksum_vec[3];
@@ -2791,8 +2834,9 @@ dissect_6lowpan_frag_first(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     tvb_set_reported_length(frag_tvb, frag_size);
     save_fragmented = pinfo->fragmented;
     pinfo->fragmented = TRUE;
+    guint32 frag_id = lowpan_reassembly_id(pinfo, dgram_tag);
     frag_data = fragment_add_check(&lowpan_reassembly_table,
-                    frag_tvb, 0, pinfo, dgram_tag, NULL,
+                    frag_tvb, 0, pinfo, frag_id, NULL,
                     0, frag_size, (frag_size < dgram_size));
 
     /* Attempt reassembly. */
@@ -2872,8 +2916,9 @@ dissect_6lowpan_frag_middle(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
     /* Add this datagram to the fragment table. */
     save_fragmented = pinfo->fragmented;
     pinfo->fragmented = TRUE;
+    guint32 frag_id = lowpan_reassembly_id(pinfo, dgram_tag);
     frag_data = fragment_add_check(&lowpan_reassembly_table,
-                    tvb, offset, pinfo, dgram_tag, NULL,
+                    tvb, offset, pinfo, frag_id, NULL,
                     dgram_offset, frag_size, ((dgram_offset + frag_size) < dgram_size));
 
     /* Attempt reassembly. */
@@ -3317,6 +3362,10 @@ proto_register_6lowpan(void)
                                    "Derive IID according to RFC 4944",
                                    "Derive IID from a short 16-bit address according to RFC 4944 (using the PAN ID).",
                                    &rfc4944_short_address_format);
+    prefs_register_bool_preference(prefs_module, "iid_has_universal_local_bit",
+                                   "IID has Universal/Local bit",
+                                   "Linux kernels before version 4.12 does toggle the Universal/Local bit.",
+                                   &iid_has_universal_local_bit);
 
     for (i = 0; i < LOWPAN_CONTEXT_MAX; i++) {
         char *pref_name, *pref_title;

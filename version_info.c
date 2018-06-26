@@ -93,9 +93,8 @@ get_zlib_compiled_version_info(void)
  *
  * "append_info" is called at the end to append any additional
  * information after the standard library information.  This is
- * required in order to, for example, put the Portaudio information
- * at the end of the string, as we currently don't use Portaudio in
- * TShark.
+ * required in order to, for example, put Qt information at the
+ * end of the string, as we don't use Qt in TShark.
  */
 GString *
 get_compiled_version_info(void (*prepend_info)(GString *),
@@ -184,7 +183,18 @@ get_compiler_info(GString *str)
 	 * distinguish between them.
 	 */
 #if defined(__clang__)
+	/*
+	 * Microsoft have a version of their compiler that has Clang
+	 * as the front end and their code generator as the back end.
+	 *
+	 * My head asplode.
+	 */
+  #if defined(__MSC_VER)
+	g_string_append_printf(str, "\n\nBuilt using Microsoft Visual C++ %d.%d.%d clang/C2 %s and -fno-ms-compatibility.\n",
+	    (_MSC_VER / 100) - 6, _MSC_VER % 100, __VERSION__);
+  #else
 	g_string_append_printf(str, "\n\nBuilt using clang %s.\n", __VERSION__);
+  #endif /* defined(__MSC_VER) */
 #elif defined(__llvm__)
 	g_string_append_printf(str, "\n\nBuilt using llvm-gcc %s.\n", __VERSION__);
 #else /* boring old GCC */
@@ -248,6 +258,13 @@ get_compiler_info(GString *str)
 	g_string_append_printf(str, "\n");
 #elif defined(_MSC_VER)
 	/* _MSC_FULL_VER not defined, but _MSC_VER defined */
+  #if defined(__clang__)
+	/* More head asplosion; see above. */
+	g_string_append_printf(str, "\n\nBuilt using Microsoft Visual C++ %d.%d.%d clang/C2 %s.\n",
+	    (_MSC_VER / 100) - 6, _MSC_VER % 100, __VERSION__);
+  #else
+	g_string_append_printf(str, "\n\nBuilt using clang %s.\n", __VERSION__);
+  #endif /* defined(__MSC_VER) */
 	g_string_append_printf(str, "\n\nBuilt using Microsoft Visual C++ %d.%d\n",
 	    (_MSC_VER / 100) - 6, _MSC_VER % 100);
 #elif defined(__SUNPRO_C)
@@ -283,8 +300,8 @@ get_locale(void)
  *
  * "additional_info" is called at the end to append any additional
  * information; this is required in order to, for example, put the
- * Portaudio information at the end of the string, as we currently
- * don't use Portaudio in TShark.
+ * libcap information at the end of the string, as we currently
+ * don't use libcap in TShark.
  */
 GString *
 get_runtime_version_info(void (*additional_info)(GString *))

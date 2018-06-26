@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "byte_view_tab.h"
 
@@ -37,6 +38,10 @@ ByteViewTab::ByteViewTab(QWidget *parent, epan_dissect_t *edt_fixed) :
     setAccessibleName(tr("Packet bytes"));
     setTabPosition(QTabWidget::South);
     setDocumentMode(true);
+
+    // Shrink down to a small but nonzero size in the main splitter.
+    int one_em = fontMetrics().height();
+    setMinimumSize(one_em, one_em);
 
     if (!edt_fixed) {
         connect(wsApp, SIGNAL(appInitialized()), this, SLOT(connectToMainWindow()));

@@ -15,10 +15,9 @@
 
 extern const value_string dns_classes[];
 
-int expand_dns_name(tvbuff_t *, int, int, int, const guchar **, guint*);
 /* Just like expand_dns_name, but pretty-prints empty names. */
 int get_dns_name(tvbuff_t *, int, int, int, const guchar **, guint*);
 
-#define MAXDNAME        1025            /* maximum domain name length */
+#define MAX_DNAME_LEN   255             /* maximum domain name length */
 
 #endif /* packet-dns.h */

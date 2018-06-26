@@ -52,7 +52,7 @@
 #define OUI_SONY_ERICSSON_7 0x001813    /* Sony Ericsson Mobile Communications AB */
 #define OUI_BLUETOOTH       0x001958    /* Bluetooth SIG */
 #define OUI_SONY_ERICSSON_8 0x001963    /* Sony Ericsson Mobile Communications AB */
-#define OUI_AIROHIVE        0x001977    /* Airohive AP to AP communication */
+#define OUI_AEROHIVE        0x001977    /* Aerohive AP to AP communication */
 #define OUI_DCBX            0x001B21    /* Data Center Bridging Capabilities Exchange Protocol */
 #define OUI_CISCO_UBI       0x001B67    /* Cisco/Ubiquisys */
 #define OUI_IEEE_802_1QBG   0x001B3F    /* IEEE 802.1 Qbg */
@@ -74,9 +74,12 @@
 #define OUI_SIEMENS         0x080006    /* Siemens AG */
 #define OUI_APPLE_ATALK     0x080007    /* Appletalk */
 #define OUI_HP              0x080009    /* Hewlett-Packard */
+#define OUI_CERN            0x080030    /* CERN, The European Organization for Nuclear Research */
+#define OUI_IEEE_C37_238    0x1C129D    /* IEEE PES PSRC/SUB Working Group H7/Sub C7 (IEEE PC37.238) */
 #define OUI_HYTEC_GER       0x30B216    /* Hytec Geraetebau GmbH */
 #define OUI_ZIGBEE          0x4A191B    /* ZigBee Alliance */
 #define OUI_WFA             0x506F9A    /* Wi-Fi Alliance */
+#define OUI_SMPTE           0x6897E8    /* Society of Motion Picture and Television Engineers */
 #define OUI_3GPP2           0xCF0002    /* 3GPP2 */
 
 #endif

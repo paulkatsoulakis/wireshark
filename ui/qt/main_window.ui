@@ -133,7 +133,7 @@
       <property name="enabled">
        <bool>true</bool>
       </property>
-      <widget class="MainWelcome" name="welcomePage"/>
+      <widget class="WelcomePage" name="welcomePage"/>
      </widget>
     </item>
    </layout>
@@ -484,7 +484,7 @@
      <addaction name="actionStatisticsHTTPPacketCounter"/>
      <addaction name="actionStatisticsHTTPRequests"/>
      <addaction name="actionStatisticsHTTPLoadDistribution"/>
-     <addaction name="actionStatisticsHTTPReferers"/>
+     <addaction name="actionStatisticsHTTPRequestSequences"/>
     </widget>
     <widget class="QMenu" name="menu29West">
      <property name="title">
@@ -1942,12 +1942,12 @@
     <string>HTTP load distribution</string>
    </property>
   </action>
-  <action name="actionStatisticsHTTPReferers">
+  <action name="actionStatisticsHTTPRequestSequences">
    <property name="text">
-    <string>Referers</string>
+    <string>Request Sequences</string>
    </property>
    <property name="toolTip">
-    <string>HTTP referers</string>
+    <string>HTTP Request Sequences</string>
    </property>
   </action>
   <action name="actionStatisticsPacketLengths">
@@ -2998,9 +2998,9 @@
    <header>main_status_bar.h</header>
   </customwidget>
   <customwidget>
-   <class>MainWelcome</class>
+   <class>WelcomePage</class>
    <extends>QFrame</extends>
-   <header>main_welcome.h</header>
+   <header>welcome_page.h</header>
    <container>1</container>
   </customwidget>
   <customwidget>

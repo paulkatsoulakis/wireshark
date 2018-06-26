@@ -178,6 +178,7 @@ static int hf_radiotap_present_ampdu = -1;
 static int hf_radiotap_present_vht = -1;
 static int hf_radiotap_present_timestamp = -1;
 static int hf_radiotap_present_he = -1;
+static int hf_radiotap_present_he_mu = -1;
 static int hf_radiotap_present_reserved = -1;
 static int hf_radiotap_present_rtap_ns = -1;
 static int hf_radiotap_present_vendor_ns = -1;
@@ -216,7 +217,7 @@ static int hf_radiotap_he_data_bw_ru_allocation_known = -1;
 static int hf_radiotap_he_doppler_known = -1;
 static int hf_radiotap_he_pri_sec_80_mhz_known = -1;
 static int hf_radiotap_he_gi_known = -1;
-static int hf_radiotap_he_ltf_symbols_known = -1;
+static int hf_radiotap_he_num_ltf_symbols_known = -1;
 static int hf_radiotap_he_pre_fec_padding_factor_known = -1;
 static int hf_radiotap_he_txbf_known = -1;
 static int hf_radiotap_he_pe_disambiguity_known = -1;
@@ -258,9 +259,10 @@ static int hf_radiotap_data_bandwidth_ru_allocation = -1;
 static int hf_radiotap_data_bandwidth_ru_allocation_unknown = -1;
 static int hf_radiotap_gi = -1;
 static int hf_radiotap_gi_unknown = -1;
-static int hf_radiotap_d5_reserved_00c0 = -1;
-static int hf_radiotap_ltf_symbols = -1;
-static int hf_radiotap_ltf_symbols_unknown = -1;
+static int hf_radiotap_ltf_symbol_size = -1;
+static int hf_radiotap_ltf_symbol_size_unknown = -1;
+static int hf_radiotap_num_ltf_symbols = -1;
+static int hf_radiotap_num_ltf_symbols_unknown = -1;
 static int hf_radiotap_d5_reserved_b11 = -1;
 static int hf_radiotap_pre_fec_padding_factor = -1;
 static int hf_radiotap_pre_fec_padding_factor_unknown = -1;
@@ -282,6 +284,41 @@ static int hf_radiotap_he_info_data_3 = -1;
 static int hf_radiotap_he_info_data_4 = -1;
 static int hf_radiotap_he_info_data_5 = -1;
 static int hf_radiotap_he_info_data_6 = -1;
+static int hf_radiotap_he_mu_sig_b_mcs = -1;
+static int hf_radiotap_he_mu_sig_b_mcs_unknown = -1;
+static int hf_radiotap_he_mu_sig_b_mcs_known = -1;
+static int hf_radiotap_he_mu_sig_b_dcm = -1;
+static int hf_radiotap_he_mu_sig_b_dcm_unknown = -1;
+static int hf_radiotap_he_mu_sig_b_dcm_known = -1;
+static int hf_radiotap_he_mu_reserved_f1_b7 = -1;
+static int hf_radiotap_he_mu_ru_0_known = -1;
+static int hf_radiotap_he_mu_ru_1_known = -1;
+static int hf_radiotap_he_mu_ru_2_known = -1;
+static int hf_radiotap_he_mu_ru_3_known = -1;
+static int hf_radiotap_he_mu_center_26_tone_ru_bit_known = -1;
+static int hf_radiotap_he_mu_center_26_tone_ru_value = -1;
+static int hf_radiotap_he_mu_sig_b_compression_known = -1;
+static int hf_radiotap_he_mu_sig_b_syms_mu_mimo_users_known = -1;
+static int hf_radiotap_he_mu_sig_b_syms_mu_mimo_users_unknown = -1;
+static int hf_radiotap_he_mu_info_flags_1 = -1;
+static int hf_radiotap_he_mu_bw_from_bw_in_sig_a = -1;
+static int hf_radiotap_he_mu_bw_from_bw_in_sig_a_unknown = -1;
+static int hf_radiotap_he_mu_bw_from_bw_in_sig_a_known = -1;
+static int hf_radiotap_he_mu_sig_b_compression_from_sig_a = -1;
+static int hf_radiotap_he_mu_sig_b_syms_mu_mimo_users = -1;
+static int hf_radiotap_he_mu_preamble_puncturing = -1;
+static int hf_radiotap_he_mu_preamble_puncturing_unknown = -1;
+static int hf_radiotap_he_mu_preamble_puncturing_known = -1;
+static int hf_radiotap_he_mu_reserved_f2_b11_b15 = -1;
+static int hf_radiotap_he_mu_info_flags_2 = -1;
+static int hf_radiotap_he_mu_ru_0 = -1;
+static int hf_radiotap_he_mu_ru_0_unknown = -1;
+static int hf_radiotap_he_mu_ru_1 = -1;
+static int hf_radiotap_he_mu_ru_1_unknown = -1;
+static int hf_radiotap_he_mu_ru_2 = -1;
+static int hf_radiotap_he_mu_ru_2_unknown = -1;
+static int hf_radiotap_he_mu_ru_3 = -1;
+static int hf_radiotap_he_mu_ru_3_unknown = -1;
 
 static gint ett_radiotap = -1;
 static gint ett_radiotap_present = -1;
@@ -307,11 +344,15 @@ static gint ett_radiotap_he_info_data_3 = -1;
 static gint ett_radiotap_he_info_data_4 = -1;
 static gint ett_radiotap_he_info_data_5 = -1;
 static gint ett_radiotap_he_info_data_6 = -1;
+static gint ett_radiotap_he_mu_info = -1;
+static gint ett_radiotap_he_mu_info_flags_1 = -1;
+static gint ett_radiotap_he_mu_info_flags_2 = -1;
 
 static expert_field ei_radiotap_data_past_header = EI_INIT;
 static expert_field ei_radiotap_present_reserved = EI_INIT;
 static expert_field ei_radiotap_present = EI_INIT;
 static expert_field ei_radiotap_invalid_data_rate = EI_INIT;
+static expert_field ei_radiotap_he_mu_upgrade_needed = EI_INIT;
 
 static dissector_handle_t ieee80211_radio_handle;
 
@@ -780,7 +821,7 @@ static const value_string he_pdu_format_vals[] = {
 static const int *data2_headers[] = {
 	&hf_radiotap_he_pri_sec_80_mhz_known,
 	&hf_radiotap_he_gi_known,
-	&hf_radiotap_he_ltf_symbols_known,
+	&hf_radiotap_he_num_ltf_symbols_known,
 	&hf_radiotap_he_pre_fec_padding_factor_known,
 	&hf_radiotap_he_txbf_known,
 	&hf_radiotap_he_pe_disambiguity_known,
@@ -839,8 +880,8 @@ static const int *data4_he_mu_headers[] = {
 static const int *data5_headers[] = {
 	&hf_radiotap_data_bandwidth_ru_allocation,
 	&hf_radiotap_gi,
-	&hf_radiotap_d5_reserved_00c0,
-	&hf_radiotap_ltf_symbols,
+	&hf_radiotap_ltf_symbol_size,
+	&hf_radiotap_num_ltf_symbols,
 	&hf_radiotap_d5_reserved_b11,
 	&hf_radiotap_pre_fec_padding_factor,
 	&hf_radiotap_txbf,
@@ -876,7 +917,15 @@ static const value_string he_gi_vals[] = {
 	{ 0, NULL }
 };
 
-static const value_string he_ltf_symbols_vals[] = {
+static const value_string he_ltf_symbol_size_vals[] = {
+	{ 0, "unknown" },
+	{ 1, "1x" },
+	{ 2, "2x" },
+	{ 3, "4x" },
+	{ 0, NULL }
+};
+
+static const value_string he_num_ltf_symbols_vals[] = {
 	{ 0, "1x" },
 	{ 1, "2x" },
 	{ 2, "4x" },
@@ -950,7 +999,8 @@ dissect_radiotap_he_info(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree
 	gboolean data_bw_ru_alloc_known = FALSE;
 	gboolean doppler_known = FALSE;
 	gboolean gi_known = FALSE;
-	gboolean ltf_symbols_known = FALSE;
+	gboolean num_ltf_symbols_known = FALSE;
+	gboolean ltf_symbol_size_known = FALSE;
 	gboolean pre_fec_padding_factor_known = FALSE;
 	gboolean txbf_known = FALSE;
 	gboolean pe_disambiguity_known = FALSE;
@@ -958,6 +1008,7 @@ dissect_radiotap_he_info(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree
 	gboolean midamble_periodicity_known = FALSE;
 	guint16 data1 = tvb_get_letohs(tvb, offset);
 	guint16 data2 = 0;
+	guint8 ltf_symbol_size = 0;
 
 	/*
 	 * Determine what is known.
@@ -1011,8 +1062,8 @@ dissect_radiotap_he_info(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree
 	 */
 	if (data2 & IEEE80211_RADIOTAP_HE_GI_KNOWN)
 		gi_known = TRUE;
-	if (data2 & IEEE80211_RADIOTAP_HE_LTF_SYMBOLS_KNOWN)
-		ltf_symbols_known = TRUE;
+	if (data2 & IEEE80211_RADIOTAP_HE_NUM_LTF_SYMBOLS_KNOWN)
+		num_ltf_symbols_known = TRUE;
 	if (data2 & IEEE80211_RADIOTAP_HE_PRE_FEC_PADDING_FACTOR_KNOWN)
 		pre_fec_padding_factor_known = TRUE;
 	if (data2 & IEEE80211_RADIOTAP_HE_TXBF_KNOWN)
@@ -1084,12 +1135,20 @@ dissect_radiotap_he_info(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree
 
 	offset += 2;
 
+	/*
+	 * The LTF Symbol Size field is zero if LFT Symbol size is unknown
+	 */
+	ltf_symbol_size = (tvb_get_letohs(tvb, offset) >> 6) & 0x03;
+	if (ltf_symbol_size != 0)
+		ltf_symbol_size_known = TRUE;
 	if (!data_bw_ru_alloc_known)
 		data5_headers[0] = &hf_radiotap_data_bandwidth_ru_allocation_unknown;
 	if (!gi_known)
 		data5_headers[1] = &hf_radiotap_gi_unknown;
-	if (!ltf_symbols_known)
-		data5_headers[3] = &hf_radiotap_ltf_symbols_unknown;
+	if (!ltf_symbol_size_known)
+		data5_headers[2] = &hf_radiotap_ltf_symbol_size_unknown;
+	if (!num_ltf_symbols_known)
+		data5_headers[3] = &hf_radiotap_num_ltf_symbols_unknown;
 	if (!pre_fec_padding_factor_known)
 		data5_headers[5] = &hf_radiotap_pre_fec_padding_factor_unknown;
 	if (!txbf_known)
@@ -1110,6 +1169,139 @@ dissect_radiotap_he_info(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree
 	proto_tree_add_bitmask(he_info_tree, tvb, offset,
 		hf_radiotap_he_info_data_6, ett_radiotap_he_info_data_6,
 		data6_headers, ENC_LITTLE_ENDIAN);
+}
+
+static const int *flags1_headers[] = {
+	&hf_radiotap_he_mu_sig_b_mcs,
+	&hf_radiotap_he_mu_sig_b_mcs_known,
+	&hf_radiotap_he_mu_sig_b_dcm,
+	&hf_radiotap_he_mu_sig_b_dcm_known,
+	&hf_radiotap_he_mu_reserved_f1_b7,
+	&hf_radiotap_he_mu_ru_0_known,
+	&hf_radiotap_he_mu_ru_1_known,
+	&hf_radiotap_he_mu_ru_2_known,
+	&hf_radiotap_he_mu_ru_3_known,
+	&hf_radiotap_he_mu_center_26_tone_ru_bit_known,
+	&hf_radiotap_he_mu_center_26_tone_ru_value,
+	&hf_radiotap_he_mu_sig_b_compression_known,
+	&hf_radiotap_he_mu_sig_b_syms_mu_mimo_users_known,
+	NULL
+};
+
+static const int *flags2_headers[] = {
+	&hf_radiotap_he_mu_bw_from_bw_in_sig_a,
+	&hf_radiotap_he_mu_bw_from_bw_in_sig_a_known,
+	&hf_radiotap_he_mu_sig_b_compression_from_sig_a,
+	&hf_radiotap_he_mu_sig_b_syms_mu_mimo_users,
+	&hf_radiotap_he_mu_preamble_puncturing,
+	&hf_radiotap_he_mu_preamble_puncturing_known,
+	&hf_radiotap_he_mu_reserved_f2_b11_b15,
+	NULL
+};
+
+/*
+ * NOTE: this is a suggested field, not a defined field, and its bit
+ * assignment and format are subject to change, although an experimental
+ * Linux patch may use bit 24 and the current format on radiotap.org.
+ */
+static void
+he_sig_b_symbols_custom(gchar *result, guint32 value)
+{
+  g_snprintf(result, ITEM_LABEL_LENGTH, "%d", value+1);
+}
+
+static void
+dissect_radiotap_he_mu_info(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
+	int offset)
+{
+	proto_tree *he_mu_info_tree = NULL;
+	guint16 flags1 = tvb_get_letohs(tvb, offset);
+	gboolean sig_b_mcs_known = FALSE;
+	gboolean sig_b_dcm_known = FALSE;
+	gboolean mu_ru_0_known = FALSE;
+	gboolean mu_ru_1_known = FALSE;
+	gboolean mu_ru_2_known = FALSE;
+	gboolean mu_ru_3_known = FALSE;
+	gboolean mu_symbol_cnt_or_user_cnt_known = FALSE;
+	gboolean mu_preamble_puncturing_known = FALSE;
+	gboolean bw_from_bw_sig_a_known = FALSE;
+	guint16 flags2;
+
+	/*
+	 * Because the spec has changed, anyone with captures that include
+	 * the HE_MU header must upgrade.
+	 */
+	expert_add_info(pinfo, tree,
+		    &ei_radiotap_he_mu_upgrade_needed);
+
+	if (flags1 & IEEE80211_RADIOTAP_HE_MU_SIG_B_MCS_KNOWN)
+		sig_b_mcs_known = TRUE;
+	if (flags1 & IEEE80211_RADIOTAP_HE_MU_SIG_B_DCM_KNOWN)
+		sig_b_dcm_known = TRUE;
+	if (flags1 & IEEE80211_RADIOTAP_HE_MU_RU_0_KNOWN)
+		mu_ru_0_known = TRUE;
+	if (flags1 & IEEE80211_RADIOTAP_HE_MU_RU_1_KNOWN)
+		mu_ru_1_known = TRUE;
+	if (flags1 & IEEE80211_RADIOTAP_HE_MU_RU_2_KNOWN)
+		mu_ru_2_known = TRUE;
+	if (flags1 & IEEE80211_RADIOTAP_HE_MU_RU_3_KNOWN)
+		mu_ru_3_known = TRUE;
+	if (flags1 & IEEE80211_RADIOTAP_HE_MU_SYMBOL_CNT_OR_USER_CNT_KNOWN)
+		mu_symbol_cnt_or_user_cnt_known = TRUE;
+
+	if (!sig_b_mcs_known)
+		flags1_headers[0] = &hf_radiotap_he_mu_sig_b_mcs_unknown;
+	if (!sig_b_dcm_known)
+		flags1_headers[2] = &hf_radiotap_he_mu_sig_b_dcm_unknown;
+
+	he_mu_info_tree = proto_tree_add_subtree(tree, tvb, offset, 8,
+		ett_radiotap_he_mu_info, NULL, "HE-MU information");
+
+	proto_tree_add_bitmask(he_mu_info_tree, tvb, offset,
+		hf_radiotap_he_mu_info_flags_1, ett_radiotap_he_mu_info_flags_1,
+		flags1_headers, ENC_LITTLE_ENDIAN);
+	offset += 2;
+
+	flags2 = tvb_get_letohs(tvb, offset);
+	if (flags2 & IEEE80211_RADIOTAP_HE_MU_BW_FROM_BW_IN_SIG_A_KNOWN)
+		bw_from_bw_sig_a_known = TRUE;
+	if (flags2 & IEEE80211_RADIOTAP_HE_MU_PREAMBLE_PUNCTURING_KNOWN)
+                mu_preamble_puncturing_known = TRUE;
+
+	if (!bw_from_bw_sig_a_known)
+		flags2_headers[0] = &hf_radiotap_he_mu_bw_from_bw_in_sig_a_unknown;
+	if (!mu_symbol_cnt_or_user_cnt_known)
+		flags2_headers[3] = &hf_radiotap_he_mu_sig_b_syms_mu_mimo_users_unknown;
+	if (!mu_preamble_puncturing_known)
+		flags2_headers[4] = &hf_radiotap_he_mu_preamble_puncturing_unknown;
+
+	proto_tree_add_bitmask(he_mu_info_tree, tvb, offset,
+		hf_radiotap_he_mu_info_flags_2, ett_radiotap_he_mu_info_flags_2,
+		flags2_headers, ENC_LITTLE_ENDIAN);
+	offset += 2;
+
+	proto_tree_add_item(he_mu_info_tree,
+			mu_ru_0_known ? hf_radiotap_he_mu_ru_0 :
+					hf_radiotap_he_mu_ru_0_unknown,
+			tvb, offset, 1, ENC_NA);
+	offset++;
+
+	proto_tree_add_item(he_mu_info_tree,
+			mu_ru_1_known ? hf_radiotap_he_mu_ru_1 :
+					hf_radiotap_he_mu_ru_1_unknown,
+			tvb, offset, 1, ENC_NA);
+	offset++;
+
+	proto_tree_add_item(he_mu_info_tree,
+			mu_ru_2_known ? hf_radiotap_he_mu_ru_2 :
+					hf_radiotap_he_mu_ru_2_unknown,
+			tvb, offset, 1, ENC_NA);
+	offset++;
+
+	proto_tree_add_item(he_mu_info_tree,
+			mu_ru_3_known ? hf_radiotap_he_mu_ru_3 :
+					hf_radiotap_he_mu_ru_3_unknown,
+			tvb, offset, 1, ENC_NA);
 }
 
 static void
@@ -1363,7 +1555,7 @@ dissect_radiotap_dbm_antsignal(tvbuff_t *tvb, packet_info *pinfo _U_,
 	proto_tree *tree, int offset, struct _radiotap_info *radiotap_info,
 	struct ieee_802_11_phdr *phdr)
 {
-	gint8 dbm = (gint8)tvb_get_guint8(tvb, offset);
+	gint8 dbm = tvb_get_gint8(tvb, offset);
 
 	phdr->has_signal_dbm = TRUE;
 	phdr->signal_dbm = dbm;
@@ -1378,7 +1570,7 @@ dissect_radiotap_dbm_antnoise(tvbuff_t *tvb, packet_info *pinfo _U_,
 	proto_tree *tree, int offset, struct _radiotap_info *radiotap_info,
 	struct ieee_802_11_phdr *phdr)
 {
-	gint dbm = (gint8) tvb_get_guint8(tvb, offset);
+	gint dbm = tvb_get_gint8(tvb, offset);
 
 	phdr->has_noise_dbm = TRUE;
 	phdr->noise_dbm = dbm;
@@ -1611,7 +1803,7 @@ dissect_radiotap(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* u
 	guint8      version;
 	guint       length;
 	proto_item *rate_ti;
-	gint8       db;
+	guint8      db;
 	gboolean    have_rflags       = FALSE;
 	guint8      rflags            = 0;
 	/* backward compat with bit 14 == fcs in header */
@@ -1813,6 +2005,9 @@ dissect_radiotap(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* u
 					    offset + 4, 4, ENC_LITTLE_ENDIAN);
 			proto_tree_add_item(present_word_tree,
 					    hf_radiotap_present_he, tvb,
+					    offset + 4, 4, ENC_LITTLE_ENDIAN);
+			proto_tree_add_item(present_word_tree,
+					    hf_radiotap_present_he_mu, tvb,
 					    offset + 4, 4, ENC_LITTLE_ENDIAN);
 
 			ti = proto_tree_add_item(present_word_tree,
@@ -2406,6 +2601,9 @@ dissect_radiotap(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* u
 		case IEEE80211_RADIOTAP_HE:
 			dissect_radiotap_he_info(tvb, pinfo, radiotap_tree, offset);
 			break;
+		case IEEE80211_RADIOTAP_HE_MU:
+			dissect_radiotap_he_mu_info(tvb, pinfo, radiotap_tree, offset);
+			break;
 		}
 	}
 
@@ -2608,7 +2806,12 @@ void proto_register_radiotap(void)
 		{&hf_radiotap_present_he,
 		 {"HE information", "radiotap.present.he",
 		  FT_BOOLEAN, 32, TFS(&tfs_present_absent), RADIOTAP_MASK(HE),
-		  "Specifies is the HE field is present", HFILL}},
+		  "Specifies if the HE field is present", HFILL}},
+
+		{&hf_radiotap_present_he_mu,
+		 {"HE-MU information", "radiotap.present.he_mu",
+		  FT_BOOLEAN, 32, TFS(&tfs_present_absent), RADIOTAP_MASK(HE_MU),
+		  "Specifies if the HE field is present", HFILL}},
 
 		{&hf_radiotap_present_reserved,
 		 {"Reserved", "radiotap.present.reserved",
@@ -2895,44 +3098,46 @@ void proto_register_radiotap(void)
 		  "Antenna number this frame was sent/received over (starting at 0)", HFILL}},
 
 		{&hf_radiotap_dbm_antsignal,
-		 {"SSI Signal", "radiotap.dbm_antsignal",
-		  FT_INT32, BASE_DEC|BASE_UNIT_STRING, &units_dbm, 0x0,
-		  "RF signal power at the antenna from a fixed,"
-		  " arbitrary value in decibels from one milliwatt", HFILL}},
+		 {"Antenna signal", "radiotap.dbm_antsignal",
+		  FT_INT8, BASE_DEC|BASE_UNIT_STRING, &units_dbm, 0x0,
+		  "RF signal power at the antenna expressed as decibels"
+		  " from one milliwatt", HFILL}},
 
 		{&hf_radiotap_db_antsignal,
-		 {"SSI Signal", "radiotap.db_antsignal",
-		  FT_UINT32, BASE_DEC|BASE_UNIT_STRING, &units_decibels, 0x0,
-		  "RF signal power at the antenna from a fixed, arbitrary value in decibels", HFILL}},
+		 {"dB antenna signal", "radiotap.db_antsignal",
+		  FT_UINT8, BASE_DEC|BASE_UNIT_STRING, &units_decibels, 0x0,
+		  "RF signal power at the antenna expressed as decibels"
+		  " from a fixed, arbitrary value", HFILL}},
 
 		{&hf_radiotap_dbm_antnoise,
-		 {"SSI Noise", "radiotap.dbm_antnoise",
-		  FT_INT32, BASE_DEC|BASE_UNIT_STRING, &units_dbm, 0x0,
-		  "RF noise power at the antenna from a fixed, arbitrary value"
-		  " in decibels per one milliwatt", HFILL}},
+		 {"Antenna noise", "radiotap.dbm_antnoise",
+		  FT_INT8, BASE_DEC|BASE_UNIT_STRING, &units_dbm, 0x0,
+		  "RF noise power at the antenna expressed as decibels"
+		  " from one milliwatt", HFILL}},
 
 		{&hf_radiotap_db_antnoise,
-		 {"SSI Noise", "radiotap.db_antnoise",
-		  FT_UINT32, BASE_DEC|BASE_UNIT_STRING, &units_decibels, 0x0,
-		  "RF noise power at the antenna from a fixed, arbitrary value"
-		  " in decibels", HFILL}},
+		 {"dB antenna noise", "radiotap.db_antnoise",
+		  FT_UINT8, BASE_DEC|BASE_UNIT_STRING, &units_decibels, 0x0,
+		  "RF noise power at the antenna expressed as decibels"
+		  " from a fixed, arbitrary value", HFILL}},
 
 		{&hf_radiotap_tx_attenuation,
-		 {"Transmit attenuation", "radiotap.txattenuation",
+		 {"TX attenuation", "radiotap.txattenuation",
 		  FT_UINT16, BASE_DEC, NULL, 0x0,
 		  "Transmit power expressed as unitless distance from max power"
-		  " set at factory (0 is max power)", HFILL}},
+		  " set at factory calibration (0 is max power)", HFILL}},
 
 		{&hf_radiotap_db_tx_attenuation,
-		 {"Transmit attenuation (dB)", "radiotap.db_txattenuation",
-		  FT_UINT16, BASE_DEC, NULL, 0x0,
+		 {"dB TX attenuation", "radiotap.db_txattenuation",
+		  FT_UINT16, BASE_DEC|BASE_UNIT_STRING, &units_decibels, 0x0,
 		  "Transmit power expressed as decibels from max power"
-		  " set at factory (0 is max power)", HFILL}},
+		  " set at factory calibration (0 is max power)", HFILL}},
 
 		{&hf_radiotap_txpower,
 		 {"Transmit power", "radiotap.txpower",
-		  FT_INT32, BASE_DEC, NULL, 0x0,
-		  "Transmit power in decibels per one milliwatt (dBm)", HFILL}},
+		  FT_INT8, BASE_DEC|BASE_UNIT_STRING, &units_dbm, 0x0,
+		  "Transmit power at the antenna port expressed as decibels"
+		  " from one milliwatt", HFILL}},
 
 		{&hf_radiotap_mcs,
 		 {"MCS information", "radiotap.mcs",
@@ -3442,9 +3647,9 @@ void proto_register_radiotap(void)
 		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown), IEEE80211_RADIOTAP_HE_GI_KNOWN,
 		  NULL, HFILL}},
 
-		{&hf_radiotap_he_ltf_symbols_known,
-		 {"LTF symbols known", "radiotap.he.data_2.ltf_symbols_known",
-		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown), IEEE80211_RADIOTAP_HE_LTF_SYMBOLS_KNOWN,
+		{&hf_radiotap_he_num_ltf_symbols_known,
+		 {"LTF symbols known", "radiotap.he.data_2.num_ltf_symbols_known",
+		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown), IEEE80211_RADIOTAP_HE_NUM_LTF_SYMBOLS_KNOWN,
 		  NULL, HFILL}},
 
 		{&hf_radiotap_he_pre_fec_padding_factor_known,
@@ -3666,20 +3871,25 @@ void proto_register_radiotap(void)
 		 FT_UINT16, BASE_HEX, NULL, IEEE80211_RADIOTAP_HE_GI_MASK,
 		 NULL, HFILL}},
 
-		{&hf_radiotap_d5_reserved_00c0,
-		 {"reserved", "radiotap.he.data_5.reserved_d5_00c0",
+		{&hf_radiotap_ltf_symbol_size,
+		 {"LTF symbol size", "radiotap.he.data_5.ltf_symbol_size",
+		 FT_UINT16, BASE_HEX, VALS(he_ltf_symbol_size_vals),
+		 IEEE80211_RADIOTAP_HE_LTF_SYMBOL_SIZE, NULL, HFILL}},
+
+		{&hf_radiotap_ltf_symbol_size_unknown,
+		 {"LTF symbol size unknown", "radiotap.he.data_5.ltf_symbol_size_unknown",
 		 FT_UINT16, BASE_HEX, NULL,
-		 IEEE80211_RADIOTAP_HE_RESERVED_D5_00C0, NULL, HFILL}},
+		 IEEE80211_RADIOTAP_HE_LTF_SYMBOL_SIZE, NULL, HFILL}},
 
-		{&hf_radiotap_ltf_symbols,
-		 {"LTF symbols", "radiotap.he.ltf_symbols",
-		  FT_UINT16, BASE_HEX, VALS(he_ltf_symbols_vals),
-		  IEEE80211_RADIOTAP_HE_LTF_SYMBOLS_MASK, NULL, HFILL}},
+		{&hf_radiotap_num_ltf_symbols,
+		 {"LTF symbols", "radiotap.he.num_ltf_symbols",
+		  FT_UINT16, BASE_HEX, VALS(he_num_ltf_symbols_vals),
+		  IEEE80211_RADIOTAP_HE_NUM_LTF_SYMBOLS_MASK, NULL, HFILL}},
 
-		{&hf_radiotap_ltf_symbols_unknown,
-		 {"LTF symbols unknown", "radiotap.he.ltf_symbols_unknown",
+		{&hf_radiotap_num_ltf_symbols_unknown,
+		 {"LTF symbols unknown", "radiotap.he.num_ltf_symbols_unknown",
 		  FT_UINT16, BASE_HEX, NULL,
-		  IEEE80211_RADIOTAP_HE_LTF_SYMBOLS_MASK, NULL, HFILL}},
+		  IEEE80211_RADIOTAP_HE_NUM_LTF_SYMBOLS_MASK, NULL, HFILL}},
 
 		{&hf_radiotap_d5_reserved_b11,
 		 {"reserved", "radiotap.he.data_5.reserved_d5_b11",
@@ -3767,6 +3977,189 @@ void proto_register_radiotap(void)
 		  FT_UINT16, BASE_HEX, NULL, 0x0,
 		  "Data 1 of the HE Info field", HFILL}},
 
+		{&hf_radiotap_he_mu_sig_b_mcs,
+		 {"SIG-B MCS (from SIG-A)", "radiotap.he_mu.sig_b_mcs",
+		  FT_UINT16, BASE_HEX, NULL,
+		  IEEE80211_RADIOTAP_HE_MU_SIG_B_MCS_MASK, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_sig_b_mcs_unknown,
+		 {"SIG-B MCS (from SIG-A) unknown",
+		  "radiotap.he_mu.sig_b_mcs_unknown",
+		  FT_UINT16, BASE_HEX, NULL,
+		  IEEE80211_RADIOTAP_HE_MU_SIG_B_MCS_MASK, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_sig_b_mcs_known,
+		 {"SIG-B MCS known", "radiotap.he_mu.sig_b_mcs_known",
+		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown),
+		  IEEE80211_RADIOTAP_HE_MU_SIG_B_MCS_KNOWN, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_sig_b_dcm,
+		 {"SIG-B DCM (from SIG-A)", "radiotap.he_mu.sig_b_dcm",
+		  FT_UINT16, BASE_HEX, NULL, IEEE80211_RADIOTAP_HE_MU_SIG_B_DCM,
+		  NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_sig_b_dcm_unknown,
+		 {"SIG-B DCM (from SIG-A) unknown",
+		  "radiotap.he_mu.sig_b_dcm_unknown",
+		  FT_UINT16, BASE_HEX, NULL, IEEE80211_RADIOTAP_HE_MU_SIG_B_DCM,
+		  NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_sig_b_dcm_known,
+		 {"SIG-B DCM known", "radiotap.he_mu.sig_b_dmc_known",
+		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown),
+		  IEEE80211_RADIOTAP_HE_MU_SIG_B_DCM_KNOWN, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_reserved_f1_b7,
+		 {"Reserved", "radiotap.he_mu.reserved_f1_b7",
+		  FT_UINT16, BASE_HEX, NULL,
+		  IEEE80211_RADIOTAP_HE_MU_RESERVED_F1_B7, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_ru_0_known,
+		 {"RU[0] known", "radiotap.he_mu.ru_0_known",
+		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown),
+		  IEEE80211_RADIOTAP_HE_MU_RU_0_KNOWN, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_ru_1_known,
+		 {"RU[1] known", "radiotap.he_mu.ru_1_known",
+		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown),
+		  IEEE80211_RADIOTAP_HE_MU_RU_1_KNOWN, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_ru_2_known,
+		 {"RU[2] known", "radiotap.he_mu.ru_2_known",
+		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown),
+		  IEEE80211_RADIOTAP_HE_MU_RU_2_KNOWN, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_ru_3_known,
+		 {"RU[3] known", "radiotap.he_mu.ru_3_known",
+		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown),
+		  IEEE80211_RADIOTAP_HE_MU_RU_3_KNOWN, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_center_26_tone_ru_bit_known,
+		 {"Center 26-tone RU bit known", "radiotap.he_mu.center_26_tone_ru_bit_known",
+		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown),
+		  IEEE80211_RADIOTAP_HE_MU_CENTER_26_TONE_RU_BIT_KNOWN, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_center_26_tone_ru_value,
+		 {"Center 26-tone RU value", "radiotap.he_mu.center_26_tone_ru_value",
+		  FT_UINT16, BASE_HEX, NULL,
+		  IEEE80211_RADIOTAP_HE_MU_CENTER_26_TONE_RU_VALUE, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_sig_b_compression_known,
+		 {"SIG-B Compression known", "radiotap.he_mu.sig_b_compression_known",
+		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown),
+		  IEEE80211_RADIOTAP_HE_MU_SIG_B_COMPRESSION_KNOWN, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_sig_b_syms_mu_mimo_users_known,
+		 {"# of HE-SIG-B Symbols/MU-MINO users known",
+		  "radiotap.he_mu.symbol_cnt_or_user_cnt_known",
+		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown),
+		  IEEE80211_RADIOTAP_HE_MU_SYMBOL_CNT_OR_USER_CNT_KNOWN,
+		  NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_info_flags_1,
+		 {"HE-MU Flags 1", "radiotap.he_mu.flags_1",
+		  FT_UINT16, BASE_HEX, NULL, 0x0,
+		  "Flags 1 of the HE-MU Info field", HFILL}},
+
+		{&hf_radiotap_he_mu_bw_from_bw_in_sig_a,
+		 {"bandwidth from Bandwidth field in SIG-A",
+			"radiotap.he_mu.bw_from_sig_a",
+		  FT_UINT16, BASE_DEC, NULL,
+		  IEEE80211_RADIOTAP_HE_MU_BW_FROM_BW_IN_SIG_A_MASK, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_bw_from_bw_in_sig_a_unknown,
+		 {"bandwidth from Bandwidth field in SIG-A unknown",
+			"radiotap.he_mu.bw_from_sig_a_unknown",
+		  FT_UINT16, BASE_DEC, NULL,
+		  IEEE80211_RADIOTAP_HE_MU_BW_FROM_BW_IN_SIG_A_MASK, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_bw_from_bw_in_sig_a_known,
+		 {"bandwidth from Bandwidth field in SIG-A known",
+			"radiotap.he_mu.bw_from_sig_a_known",
+		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown),
+		  IEEE80211_RADIOTAP_HE_MU_BW_FROM_BW_IN_SIG_A_KNOWN, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_sig_b_compression_from_sig_a,
+		 {"SIG-B compression from SIG-A", "radiotap.he_mu.sig_b_compression",
+		  FT_BOOLEAN, 16, NULL,
+		  IEEE80211_RADIOTAP_HE_MU_SIG_B_COMPRESSION_FROM_SIG_A,
+		  NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_sig_b_syms_mu_mimo_users,
+		 {"# of HE-SIG-B Symbols or # of MU-MIMO Users",
+		  "radiotap.he_mu.sig_b_syms_or_mu_mimo_users",
+		  FT_UINT16, BASE_CUSTOM, CF_FUNC(he_sig_b_symbols_custom),
+		  IEEE80211_RADIOTAP_HE_MU_SYMBOL_CNT_OR_USER_CNT, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_sig_b_syms_mu_mimo_users_unknown,
+		 {"# of HE-SIG-B Symbols or # of MU-MIMO Users unknown",
+		  "radiotap.he_mu.sig_b_syms_or_mu_mimo_users_unknown",
+		  FT_UINT16, BASE_DEC, NULL,
+		  IEEE80211_RADIOTAP_HE_MU_SYMBOL_CNT_OR_USER_CNT, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_preamble_puncturing,
+		 {"preamble puncturing from Bandwidth field in HE-SIG-A",
+		  "radiotap.he_mu.preamble_puncturing",
+		  FT_UINT16, BASE_HEX, NULL,
+		  IEEE80211_RADIOTAP_HE_MU_PREAMBLE_PUNCTURING_MASK, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_preamble_puncturing_unknown,
+		 {"preamble puncturing from Bandwidth field in HE-SIG-A unknown",
+		  "radiotap.he_mu.preamble_puncturing",
+		  FT_UINT16, BASE_HEX, NULL,
+		  IEEE80211_RADIOTAP_HE_MU_PREAMBLE_PUNCTURING_MASK, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_preamble_puncturing_known,
+		 {"preamble puncturing from Bandwidth field in HE-SIG-A known",
+		  "radiotap.he_mu.preamble_puncturing_known",
+		  FT_BOOLEAN, 16, TFS(&tfs_known_unknown),
+		  IEEE80211_RADIOTAP_HE_MU_PREAMBLE_PUNCTURING_KNOWN, NULL, HFILL}},
+		{&hf_radiotap_he_mu_reserved_f2_b11_b15,
+		 {"Reserved", "radiotap.he_mu.reserved_f2_b11_b15",
+		  FT_UINT16, BASE_HEX, NULL,
+		  IEEE80211_RADIOTAP_HE_MU_RESERVED_F2_B11_B15, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_info_flags_2,
+		 {"HE-MU Flags 2", "radiotap.he_mu.flags_2",
+		  FT_UINT16, BASE_HEX, NULL, 0x0,
+		  "Flags 2 of the HE-MU Info field", HFILL}},
+
+		{&hf_radiotap_he_mu_ru_0,
+		 {"RU[0] assignment index", "radiotap.he_mu.ru_0_index",
+		  FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_ru_0_unknown,
+		 {"RU[0] assignment index unknown",
+		  "radiotap.he_mu.ru_0_index_unknown",
+		  FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_ru_1,
+		 {"RU[2] assignment index", "radiotap.he_mu.ru_1_index",
+		  FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_ru_1_unknown,
+		 {"RU[2] assignment index unknown",
+		  "radiotap.he_mu.ru_1_index_unknown",
+		  FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_ru_2,
+		 {"RU[2] assignment index", "radiotap.he_mu.ru_2_index",
+		  FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_ru_2_unknown,
+		 {"RU[2] assignment index unknown",
+		  "radiotap.he_mu.ru_2_index_unknown",
+		  FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_ru_3,
+		 {"RU[3] assignment index", "radiotap.he_mu.ru_3_index",
+		  FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+
+		{&hf_radiotap_he_mu_ru_3_unknown,
+		 {"RU[3] assignment index unknown",
+		  "radiotap.he_mu.ru_3_index_unknown",
+		  FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+
 	};
 	static gint *ett[] = {
 		&ett_radiotap,
@@ -3793,12 +4186,16 @@ void proto_register_radiotap(void)
 		&ett_radiotap_he_info_data_4,
 		&ett_radiotap_he_info_data_5,
 		&ett_radiotap_he_info_data_6,
+		&ett_radiotap_he_mu_info,
+		&ett_radiotap_he_mu_info_flags_1,
+		&ett_radiotap_he_mu_info_flags_2,
 	};
 	static ei_register_info ei[] = {
 		{ &ei_radiotap_present, { "radiotap.present.radiotap_and_vendor", PI_MALFORMED, PI_ERROR, "Both radiotap and vendor namespace specified in bitmask word", EXPFILL }},
 		{ &ei_radiotap_present_reserved, { "radiotap.present.reserved.unknown", PI_UNDECODED, PI_NOTE, "Unknown Radiotap fields, code not implemented, Please check radiotap documentation, Contact Wireshark developers if you want this supported", EXPFILL }},
 		{ &ei_radiotap_data_past_header, { "radiotap.data_past_header", PI_MALFORMED, PI_ERROR, "Radiotap data goes past the end of the radiotap header", EXPFILL }},
 		{ &ei_radiotap_invalid_data_rate, { "radiotap.vht.datarate.invalid", PI_PROTOCOL, PI_WARN, "Data rate invalid", EXPFILL }},
+		{ &ei_radiotap_he_mu_upgrade_needed, { "radiotap.he_mu_upgrade_needed", PI_PROTOCOL, PI_WARN, "A newer version of wireshark is needed to dissect the HE_MU header", EXPFILL }},
 	};
 
 	module_t *radiotap_module;

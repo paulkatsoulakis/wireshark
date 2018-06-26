@@ -3992,7 +3992,7 @@ pjj-player-disc	4416/udp	# PJJ Media Player discovery
 workflowdir	4417/tcp	# Workflow Director Communication
 axysbridge	4418/udp	# AXYS communication protocol
 cbp		4419/tcp	# Colnod Binary Protocol
-nvm-express	4420/tcp/udp	# NVM Express over Fabrics storage access
+nvme		4420/tcp/udp	# NVM Express over Fabrics storage access
 scaleft		4421/tcp	# Multi-Platform Remote Management for Cloud Infrastructure
 tsepisp		4422/tcp	# TSEP Installation Service Protocol
 thingkit	4423/tcp	# thingkit secure mesh
@@ -4193,6 +4193,8 @@ socp-c		4882/udp	# SOCP Control Protocol
 wmlserver	4883/tcp	# Meier-Phelps License Server
 hivestor	4884/tcp/udp	# HiveStor Distributed File System
 abbs		4885/tcp/udp	# ABBS
+xcap-portal	4888/tcp	# xcap code analysis portal public user access
+xcap-control	4889/tcp	# xcap code analysis portal cluster control and administration
 lyskom		4894/tcp/udp	# LysKOM Protocol A
 radmin-port	4899/tcp/udp	# RAdmin Port
 hfcs		4900/tcp/udp	# HFSQL Client/Server Database Engine
@@ -4333,7 +4335,6 @@ social-alarm	5146/tcp	# Social Alarm Service
 atmp		5150/tcp/udp	# Ascend Tunnel Management Protocol
 esri-sde	5151/tcp/udp	# ESRI SDE Instance
 sde-discovery	5152/tcp/udp	# ESRI SDE Instance Discovery
-toruxserver	5153/tcp	# ToruX Game Server
 bzflag		5154/tcp/udp	# BZFlag game server
 asctrl-agent	5155/tcp/udp	# Oracle asControl Agent
 rugameonline	5156/tcp	# Russian Online Game
@@ -4937,6 +4938,7 @@ ctdp		7022/tcp/udp	# CT Discovery Protocol
 ct2nmcs		7023/tcp/udp	# Comtech T2 NMCS
 vmsvc		7024/tcp/udp	# Vormetric service
 vmsvc-2		7025/tcp/udp	# Vormetric Service II
+loreji-panel	7026/tcp	# Loreji Webhosting Panel
 op-probe	7030/tcp/udp	# ObjectPlanet probe
 iposplanet	7031/tcp	# IPOSPLANET retailing multi devices protocol
 quest-disc	7040/udp	# Quest application level network service discovery
@@ -5142,6 +5144,7 @@ wpl-analytics	8006/tcp	# World Programming analytics
 wpl-disc	8006/udp	# World Programming analytics discovery
 warppipe	8007/tcp/udp	# I/O oriented cluster computing software
 http-alt	8008/tcp/udp	# HTTP Alternate
+nvme-disc	8009/tcp	# NVMe over Fabrics Discovery Service
 qbdb		8019/tcp/udp	# QB DB Dynamic Port
 intu-ec-svcdisc	8020/tcp/udp	# Intuit Entitlement Service and Discovery
 intu-ec-client	8021/tcp/udp	# Intuit Entitlement Client
@@ -5352,6 +5355,7 @@ ogs-client	9007/udp	# Open Grid Services Client
 ogs-server	9008/tcp	# Open Grid Services Server
 pichat		9009/tcp/udp	# Pichat Server
 sdr		9010/tcp	# Secure Data Replicator Protocol
+d-star		9011/udp	# D-Star Routing digital voice+data for amateur radio
 tambora		9020/tcp/udp	# TAMBORA
 panagolin-ident	9021/tcp/udp	# Pangolin Identification
 paragent	9022/tcp/udp	# PrivateArk Remote Agent
@@ -6083,6 +6087,7 @@ ip-provision	43190/tcp/udp	# IP-PROVISION
 noit-transport	43191/tcp	# Reconnoiter Agent Data Transport
 shaperai	43210/tcp	# Shaper Automation Server Management
 shaperai-disc	43210/udp	# Shaper Automation Server Management Discovery
+hmip-routing	43438/udp	# HmIP LAN Routing
 eq3-update	43439/tcp	# EQ3 firmware update
 eq3-config	43439/udp	# EQ3 discovery and configuration
 ew-mgmt		43440/tcp	# Cisco EnergyWise Management

@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,11 +34,6 @@
 #include <QProcess>
 #include <QUrl>
 #include <QUuid>
-
-#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-// Qt::escape
-#include <QTextDocument>
-#endif
 
 /* Make the format_size_flags_e enum usable in C++ */
 format_size_flags_e operator|(format_size_flags_e lhs, format_size_flags_e rhs) {
@@ -120,7 +116,7 @@ const QString address_to_display_qstring(const _address *address)
 
 const QString val_to_qstring(const guint32 val, const value_string *vs, const char *fmt)
 {
-    QString val_qstr = QString();
+    QString val_qstr;
     gchar* gchar_p = val_to_str_wmem(NULL, val, vs, fmt);
     val_qstr = gchar_p;
     wmem_free(NULL, gchar_p);
@@ -130,7 +126,7 @@ const QString val_to_qstring(const guint32 val, const value_string *vs, const ch
 
 const QString val_ext_to_qstring(const guint32 val, value_string_ext *vse, const char *fmt)
 {
-    QString val_qstr = QString();
+    QString val_qstr;
     gchar* gchar_p = val_to_str_ext_wmem(NULL, val, vse, fmt);
     val_qstr = gchar_p;
     wmem_free(NULL, gchar_p);
@@ -169,11 +165,7 @@ const QString time_t_to_qstring(time_t ti_time)
 }
 
 QString html_escape(const QString plain_string) {
-#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-    return Qt::escape(plain_string);
-#else
     return plain_string.toHtmlEscaped();
-#endif
 }
 
 

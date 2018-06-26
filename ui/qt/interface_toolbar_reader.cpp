@@ -4,13 +4,12 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
-#ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
-#endif
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -96,12 +95,10 @@ int InterfaceToolbarReader::pipe_read(char *data, int nbyte)
             total_len += read_len;
         }
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
         if (QThread::currentThread()->isInterruptionRequested())
         {
             return -1;
         }
-#endif
     }
 
     return total_len;
@@ -141,12 +138,10 @@ void InterfaceToolbarReader::loop()
             break;
         }
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
         if (QThread::currentThread()->isInterruptionRequested())
         {
             break;
         }
-#endif
 
         if (ret == 0 || !FD_ISSET(fd_in_, &readfds))
         {

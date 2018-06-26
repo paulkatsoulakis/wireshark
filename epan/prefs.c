@@ -10,6 +10,8 @@
 
 #include "config.h"
 
+#include "ws_diag_control.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -21,9 +23,7 @@
 #include <epan/address.h>
 #include <epan/addr_resolv.h>
 #include <epan/oids.h>
-#ifdef HAVE_GEOIP
-#include <epan/geoip_db.h>
-#endif
+#include <epan/maxmind_db.h>
 #include <epan/packet.h>
 #include <epan/prefs.h>
 #include <epan/proto.h>
@@ -97,13 +97,6 @@ static const enum_val_t gui_ptree_expander_style[] = {
     {NULL, NULL, -1}
 };
 
-/* GTK+ only. */
-static const enum_val_t gui_hex_dump_highlight_style[] = {
-    {"BOLD", "BOLD", 0},
-    {"INVERSE", "INVERSE", 1},
-    {NULL, NULL, -1}
-};
-
 static const enum_val_t gui_console_open_type[] = {
     {"NEVER", "NEVER", console_open_never},
     {"AUTOMATIC", "AUTOMATIC", console_open_auto},
@@ -125,8 +118,6 @@ static const enum_val_t gui_fileopen_style[] = {
     {NULL, NULL, -1}
 };
 
-/* GTK knows of two ways representing "both", vertical and horizontal aligned.
- * as this may not work on other guis, we use only "both" in general here */
 static const enum_val_t gui_toolbar_style[] = {
     {"ICONS", "ICONS", 0},
     {"TEXT", "TEXT", 1},
@@ -145,6 +136,13 @@ static const enum_val_t gui_layout_content[] = {
 static const enum_val_t gui_update_channel[] = {
     {"DEVELOPMENT", "DEVELOPMENT", UPDATE_CHANNEL_DEVELOPMENT},
     {"STABLE", "STABLE", UPDATE_CHANNEL_STABLE},
+    {NULL, NULL, -1}
+};
+
+static const enum_val_t gui_selection_style[] = {
+    {"DEFAULT", "DEFAULT",   COLOR_STYLE_DEFAULT},
+    {"FLAT",    "FLAT",      COLOR_STYLE_FLAT},
+    {"GRADIENT", "GRADIENT", COLOR_STYLE_GRADIENT},
     {NULL, NULL, -1}
 };
 
@@ -247,7 +245,6 @@ struct preference {
       } enum_info;                   /**< for PREF_ENUM */
     } info;                          /**< display/text file information */
     struct pref_custom_cbs custom_cbs;   /**< for PREF_CUSTOM */
-    void    *control;                /**< handle for GUI control for this preference. GTK+ only? */
 };
 
 const char* prefs_get_description(pref_t *pref)
@@ -280,21 +277,6 @@ guint32 prefs_get_max_value(pref_t *pref)
     return pref->info.max_value;
 }
 
-void* prefs_get_control(pref_t *pref)
-{
-    return pref->control;
-}
-
-void prefs_set_control(pref_t *pref, void* control)
-{
-    pref->control = control;
-}
-
-int prefs_get_ordinal(pref_t *pref)
-{
-    return pref->ordinal;
-}
-
 /*
  * List of all modules with preference settings.
  */
@@ -321,7 +303,9 @@ prefs_init(void)
 static void
 free_string_like_preference(pref_t *pref)
 {
-    g_free(*pref->varp.string);
+DIAG_OFF(cast-qual)
+    g_free((char *)*pref->varp.string);
+DIAG_ON(cast-qual)
     *pref->varp.string = NULL;
     g_free(pref->default_val.string);
     pref->default_val.string = NULL;
@@ -349,10 +333,7 @@ free_pref(gpointer data, gpointer user_data _U_)
     case PREF_SAVE_FILENAME:
     case PREF_OPEN_FILENAME:
     case PREF_DIRNAME:
-        g_free(*pref->varp.string);
-        *pref->varp.string = NULL;
-        g_free(pref->default_val.string);
-        pref->default_val.string = NULL;
+        free_string_like_preference(pref);
         break;
     case PREF_RANGE:
     case PREF_DECODE_AS_RANGE:
@@ -401,6 +382,9 @@ prefs_cleanup(void)
 
     /* Clean the uats */
     uat_cleanup();
+
+    /* Shut down mmdbresolve */
+    maxmind_db_pref_cleanup();
 
     g_free(prefs.saved_at_version);
     g_free(gpf_path);
@@ -1384,6 +1368,18 @@ register_string_like_preference(module_t *module, const char *name,
 }
 
 /*
+ * Assign to a string preference.
+ */
+static void
+pref_set_string_like_pref_value(pref_t *pref, const gchar *value)
+{
+DIAG_OFF(cast-qual)
+    g_free((void *)*pref->varp.string);
+DIAG_ON(cast-qual)
+    *pref->varp.string = g_strdup(value);
+}
+
+/*
  * For use by UI code that sets preferences.
  */
 unsigned int
@@ -1419,11 +1415,10 @@ prefs_set_string_value(pref_t *pref, const char* value, pref_source_t source)
         if (*pref->varp.string) {
             if (strcmp(*pref->varp.string, value) != 0) {
                 changed = prefs_get_effect_flags(pref);
-                g_free(*pref->varp.string);
-                *pref->varp.string = g_strdup(value);
+                pref_set_string_like_pref_value(pref, value);
             }
         } else if (value) {
-            *pref->varp.string = g_strdup(value);
+            pref_set_string_like_pref_value(pref, value);
         }
         break;
     default:
@@ -1729,24 +1724,24 @@ gboolean prefs_set_color_value(pref_t *pref, color_t value, pref_source_t source
     switch (source)
     {
     case pref_default:
-        if ((pref->default_val.color.red != value.red) &&
-            (pref->default_val.color.green != value.green) &&
+        if ((pref->default_val.color.red != value.red) ||
+            (pref->default_val.color.green != value.green) ||
             (pref->default_val.color.blue != value.blue)) {
             changed = TRUE;
             pref->default_val.color = value;
         }
         break;
     case pref_stashed:
-        if ((pref->stashed_val.color.red != value.red) &&
-            (pref->stashed_val.color.green != value.green) &&
+        if ((pref->stashed_val.color.red != value.red) ||
+            (pref->stashed_val.color.green != value.green) ||
             (pref->stashed_val.color.blue != value.blue)) {
             changed = TRUE;
             pref->stashed_val.color = value;
         }
         break;
     case pref_current:
-        if ((pref->varp.colorp->red != value.red) &&
-            (pref->varp.colorp->green != value.green) &&
+        if ((pref->varp.colorp->red != value.red) ||
+            (pref->varp.colorp->green != value.green) ||
             (pref->varp.colorp->blue != value.blue)) {
             changed = TRUE;
             *pref->varp.colorp = value;
@@ -2007,7 +2002,7 @@ pref_unstash(pref_t *pref, gpointer unstash_data_p)
             if (unstash_data->handle_decode_as) {
                 sub_dissectors = find_dissector_table(pref->name);
                 if (sub_dissectors != NULL) {
-                    handle = dissector_table_get_dissector_handle(sub_dissectors, (gchar*)unstash_data->module->title);
+                    handle = dissector_table_get_dissector_handle(sub_dissectors, unstash_data->module->title);
                     if (handle != NULL) {
                         dissector_change_uint(pref->name, *pref->varp.uint, handle);
                     }
@@ -2056,7 +2051,7 @@ pref_unstash(pref_t *pref, gpointer unstash_data_p)
             if (unstash_data->handle_decode_as) {
                 sub_dissectors = find_dissector_table(pref->name);
                 if (sub_dissectors != NULL) {
-                    handle = dissector_table_get_dissector_handle(sub_dissectors, (gchar*)unstash_data->module->title);
+                    handle = dissector_table_get_dissector_handle(sub_dissectors, unstash_data->module->title);
                     if (handle != NULL) {
                         /* Delete all of the old values from the dissector table */
                         for (i = 0; i < (*pref->varp.range)->nranges; i++) {
@@ -2296,12 +2291,6 @@ stats_callback(void)
     /* Test for a sane tap update interval */
     if (prefs.tap_update_interval < 100 || prefs.tap_update_interval > 10000)
         prefs.tap_update_interval = TAP_UPDATE_DEFAULT_INTERVAL;
-
-#ifdef HAVE_LIBPORTAUDIO
-    /* Test for a sane max channels entry */
-    if (prefs.rtp_player_max_visible < 1 || prefs.rtp_player_max_visible > 10)
-        prefs.rtp_player_max_visible = RTP_PLAYER_DEFAULT_VISIBLE;
-#endif
 
     /* burst resolution can't be less than 1 (ms) */
     if (prefs.st_burst_resolution < 1) {
@@ -3028,11 +3017,7 @@ prefs_register_modules(void)
     prefs_register_obsolete_preference(gui_module, "scrollbar_on_right");
     prefs_register_obsolete_preference(gui_module, "packet_list_sel_browse");
     prefs_register_obsolete_preference(gui_module, "protocol_tree_sel_browse");
-
-    prefs_register_bool_preference(gui_module, "tree_view_altern_colors",
-                                   "Alternating colors in TreeViews",
-                                   "Alternating colors in TreeViews?",
-                                   &prefs.gui_altern_colors);
+    prefs_register_obsolete_preference(gui_module, "tree_view_altern_colors");
 
     prefs_register_bool_preference(gui_module, "expert_composite_eyecandy",
                                    "Display Icons on Expert Composite Dialog Tabs",
@@ -3059,10 +3044,7 @@ prefs_register_modules(void)
                        "Protocol-tree expander style",
                        &prefs.gui_ptree_expander_style, gui_ptree_expander_style, FALSE);
 
-    prefs_register_enum_preference(gui_module, "hex_dump_highlight_style",
-                       "Hex dump highlight style",
-                       "Hex dump highlight style",
-                       &prefs.gui_hex_dump_highlight_style, gui_hex_dump_highlight_style, FALSE);
+    prefs_register_obsolete_preference(gui_module, "hex_dump_highlight_style");
 
     gui_column_module = prefs_register_subtree(gui_module, "Columns", "Columns", NULL);
 
@@ -3107,9 +3089,7 @@ prefs_register_modules(void)
 
     prefs_register_obsolete_preference(gui_font_module, "font_name");
 
-    register_string_like_preference(gui_font_module, "gtk2.font_name", "Font name",
-        "Font name for packet list, protocol tree, and hex dump panes. (GTK+)",
-        &prefs.gui_gtk2_font_name, PREF_STRING, NULL, TRUE);
+    prefs_register_obsolete_preference(gui_font_module, "gtk2.font_name");
 
     register_string_like_preference(gui_font_module, "qt.font_name", "Font name",
         "Font name for packet list, protocol tree, and hex dump panes. (Qt)",
@@ -3117,6 +3097,24 @@ prefs_register_modules(void)
 
     /* User Interface : Colors */
     gui_color_module = prefs_register_subtree(gui_module, "Colors", "Colors", NULL);
+
+    prefs_register_color_preference(gui_color_module, "active_frame.fg", "Foregound color for an active selected item",
+        "Foregound color for an active selected item", &prefs.gui_active_fg);
+
+    prefs_register_color_preference(gui_color_module, "active_frame.bg", "Backgound color for an active selected item",
+        "Backgound color for an active selected item", &prefs.gui_active_bg);
+
+    prefs_register_enum_preference(gui_color_module, "active_frame.style", "Color style for an active selected item",
+        "Color style for an active selected item", &prefs.gui_active_style, gui_selection_style, FALSE);
+
+    prefs_register_color_preference(gui_color_module, "inactive_frame.fg", "Foregound color for an inactive selected item",
+        "Foregound color for an inactive selected item", &prefs.gui_inactive_fg);
+
+    prefs_register_color_preference(gui_color_module, "inactive_frame.bg", "Backgound color for an inactive selected item",
+        "Backgound color for an inactive selected item", &prefs.gui_inactive_bg);
+
+    prefs_register_enum_preference(gui_color_module, "inactive_frame.style", "Color style for an inactive selected item",
+        "Color style for an inactive selected item", &prefs.gui_inactive_style, gui_selection_style, FALSE);
 
     prefs_register_color_preference(gui_color_module, "marked_frame.fg", "Color preferences for a marked frame",
         "Color preferences for a marked frame", &prefs.gui_marked_fg);
@@ -3232,11 +3230,7 @@ prefs_register_modules(void)
                                    "Save window maximized state at exit?",
                                    &prefs.gui_geometry_save_maximized);
 
-    /* GTK+ only */
-    prefs_register_bool_preference(gui_module, "macosx_style",
-                                   "Use macOS style",
-                                   "Use macOS style (macOS with native GTK only)?",
-                                   &prefs.gui_macosx_style);
+    prefs_register_obsolete_preference(gui_module, "macosx_style");
 
     prefs_register_obsolete_preference(gui_module, "geometry.main.x");
     prefs_register_obsolete_preference(gui_module, "geometry.main.y");
@@ -3291,18 +3285,8 @@ prefs_register_modules(void)
                        "Show version in the start page and/or main screen's title bar",
                        (gint*)(void*)(&prefs.gui_version_placement), gui_version_placement_type, FALSE);
 
-    prefs_register_bool_preference(gui_module, "auto_scroll_on_expand",
-                                   "Automatically scroll packet details",
-                                   "When selecting a new packet, automatically scroll"
-                                   "to the packet detail item that matches the most"
-                                   "recently selected item",
-                                   &prefs.gui_auto_scroll_on_expand);
-
-    prefs_register_uint_preference(gui_module, "auto_scroll_percentage",
-                                   "Packet detail scroll percentage",
-                                   "The percentage down the view the recently expanded detail item should be scrolled",
-                                   10,
-                                   &prefs.gui_auto_scroll_percentage);
+    prefs_register_obsolete_preference(gui_module, "auto_scroll_on_expand");
+    prefs_register_obsolete_preference(gui_module, "auto_scroll_percentage");
 
     /* User Interface : Layout */
     gui_layout_module = prefs_register_subtree(gui_module, "Layout", "Layout", gui_layout_callback);
@@ -3377,12 +3361,10 @@ prefs_register_modules(void)
                                    "Show all interfaces, including interfaces marked as hidden",
                                    &prefs.gui_interfaces_show_hidden);
 
-#ifdef HAVE_PCAP_REMOTE
     prefs_register_bool_preference(gui_module, "interfaces_remote_display",
                                    "Show Remote interfaces",
                                    "Show remote interfaces in the interface selection",
                                    &prefs.gui_interfaces_remote_display);
-#endif
 
     register_string_like_preference(gui_module, "interfaces_hidden_types", "Hide interface types in list",
         "Hide the given interface types in the startup list",
@@ -3451,11 +3433,9 @@ prefs_register_modules(void)
         "By default, capture in monitor mode on interface? (Ex: eth0,eth3,...)",
         &prefs.capture_devices_monitor_mode, PREF_STRING, NULL, FALSE);
 
-#ifdef CAN_SET_CAPTURE_BUFFER_SIZE
     register_string_like_preference(capture_module, "devices_buffersize", "Interface buffer size",
         "Interface buffer size (Ex: en0(1),en1(143),...)",
         &prefs.capture_devices_buffersize, PREF_STRING, NULL, FALSE);
-#endif
 
     register_string_like_preference(capture_module, "devices_snaplen", "Interface snap length",
         "Interface snap length (Ex: en0(65535),en1(1430),...)",
@@ -3485,9 +3465,8 @@ prefs_register_modules(void)
     prefs_register_bool_preference(capture_module, "auto_scroll", "Scroll packet list during capture",
         "Scroll packet list during capture?", &prefs.capture_auto_scroll);
 
-    /* GTK+ only */
-    prefs_register_bool_preference(capture_module, "show_info", "Show capture info dialog while capturing",
-        "Show capture info dialog while capturing?", &prefs.capture_show_info);
+    prefs_register_bool_preference(capture_module, "show_info", "Show capture information dialog while capturing",
+        "Show capture information dialog while capturing?", &prefs.capture_show_info);
 
     prefs_register_obsolete_preference(capture_module, "syntax_check_filter");
 
@@ -3506,9 +3485,7 @@ prefs_register_modules(void)
         "Name Resolution", NULL, TRUE);
     addr_resolve_pref_init(nameres_module);
     oid_pref_init(nameres_module);
-#ifdef HAVE_GEOIP
-    geoip_db_pref_init(nameres_module);
-#endif
+    maxmind_db_pref_init(nameres_module);
 
     /* Printing */
     printing = prefs_register_module(NULL, "print", "Printing",
@@ -3546,13 +3523,7 @@ prefs_register_modules(void)
                                    10,
                                    &prefs.tap_update_interval);
 
-#ifdef HAVE_LIBPORTAUDIO
-    prefs_register_uint_preference(stats_module, "rtp_player_max_visible",
-                                   "Max visible channels in RTP Player",
-                                   "Determines maximum height of RTP Player window",
-                                   10,
-                                   &prefs.rtp_player_max_visible);
-#endif
+    prefs_register_obsolete_preference(stats_module, "rtp_player_max_visible");
 
     prefs_register_bool_preference(stats_module, "st_enable_burstinfo",
             "Enable the calculation of burst information",
@@ -3802,9 +3773,7 @@ char *join_string_list(GList *sl)
 void
 prefs_clear_string_list(GList *sl)
 {
-    /* g_list_free_full() only exists since 2.28. */
-    g_list_foreach(sl, (GFunc)g_free, NULL);
-    g_list_free(sl);
+    g_list_free_full(sl, g_free);
 }
 
 /*
@@ -4001,25 +3970,30 @@ pre_init_prefs(void)
     g_free(prefs.pr_cmd);
     prefs.pr_cmd     = g_strdup("lpr");
 
-    prefs.gui_altern_colors = FALSE;
     prefs.gui_expert_composite_eyecandy = FALSE;
     prefs.gui_ptree_line_style = 0;
     prefs.gui_ptree_expander_style = 1;
-    prefs.gui_hex_dump_highlight_style = 1; /* GTK+ only */
     prefs.filter_toolbar_show_in_statusbar = FALSE;
     prefs.restore_filter_after_following_stream = FALSE;
     prefs.gui_toolbar_main_style = TB_STYLE_ICONS;
     prefs.gui_toolbar_filter_style = TB_STYLE_TEXT;
-    /* These will be g_freed, so they must be g_mallocated. */
-    g_free(prefs.gui_gtk2_font_name);
-#ifdef _WIN32
-    prefs.gui_gtk2_font_name         = g_strdup("Lucida Console 10");
-#else
-    prefs.gui_gtk2_font_name         = g_strdup("Monospace 10");
-#endif
     /* We try to find the best font in the Qt code */
     g_free(prefs.gui_qt_font_name);
     prefs.gui_qt_font_name           = g_strdup("");
+    prefs.gui_active_fg.red          =         0;
+    prefs.gui_active_fg.green        =         0;
+    prefs.gui_active_fg.blue         =         0;
+    prefs.gui_active_bg.red          =     52223;
+    prefs.gui_active_bg.green        =     59647;
+    prefs.gui_active_bg.blue         =     65535;
+    prefs.gui_active_style           = COLOR_STYLE_DEFAULT;
+    prefs.gui_inactive_fg.red        =         0;
+    prefs.gui_inactive_fg.green      =         0;
+    prefs.gui_inactive_fg.blue       =         0;
+    prefs.gui_inactive_bg.red        =     61439;
+    prefs.gui_inactive_bg.green      =     61439;
+    prefs.gui_inactive_bg.blue       =     61439;
+    prefs.gui_inactive_style         = COLOR_STYLE_DEFAULT;
     prefs.gui_marked_fg.red          =     65535;
     prefs.gui_marked_fg.green        =     65535;
     prefs.gui_marked_fg.blue         =     65535;
@@ -4076,7 +4050,6 @@ pre_init_prefs(void)
     prefs.gui_geometry_save_position = TRUE;
     prefs.gui_geometry_save_size     = TRUE;
     prefs.gui_geometry_save_maximized= TRUE;
-    prefs.gui_macosx_style           = TRUE;
     prefs.gui_console_open           = console_open_never;
     prefs.gui_fileopen_style         = FO_STYLE_LAST_OPENED;
     prefs.gui_recent_df_entries_max  = 10;
@@ -4099,8 +4072,6 @@ pre_init_prefs(void)
     g_free(prefs.gui_start_title);
     prefs.gui_start_title            = g_strdup("The World's Most Popular Network Protocol Analyzer");
     prefs.gui_version_placement      = version_both;
-    prefs.gui_auto_scroll_on_expand  = FALSE;
-    prefs.gui_auto_scroll_percentage = 0;
     prefs.gui_layout_type            = layout_type_5;
     prefs.gui_layout_content_1       = layout_pane_content_plist;
     prefs.gui_layout_content_2       = layout_pane_content_pdetails;
@@ -4112,10 +4083,7 @@ pre_init_prefs(void)
     g_free (prefs.gui_interfaces_hide_types);
     prefs.gui_interfaces_hide_types = g_strdup("");
     prefs.gui_interfaces_show_hidden = FALSE;
-#ifdef HAVE_PCAP_REMOTE
     prefs.gui_interfaces_remote_display = TRUE;
-#endif
-
     prefs.gui_qt_packet_list_separator = FALSE;
     prefs.gui_qt_show_selected_packet = FALSE;
     prefs.gui_qt_show_file_load_time = FALSE;
@@ -4161,7 +4129,6 @@ pre_init_prefs(void)
 
 /* set the default values for the tap/statistics dialog box */
     prefs.tap_update_interval    = TAP_UPDATE_DEFAULT_INTERVAL;
-    prefs.rtp_player_max_visible = RTP_PLAYER_DEFAULT_VISIBLE;
     prefs.st_enable_burstinfo = TRUE;
     prefs.st_burst_showcount = FALSE;
     prefs.st_burst_resolution = ST_DEF_BURSTRES;
@@ -5109,7 +5076,7 @@ deprecated_port_pref(gchar *pref_name, const gchar *value)
     struct port_pref_name
     {
         const char* pref_name;
-        const char* module_name;
+        const char* module_name;    /* the protocol filter name */
         const char* table_name;
         guint base;
     };
@@ -5138,7 +5105,7 @@ deprecated_port_pref(gchar *pref_name, const gchar *value)
         {"rsync.tcp_port", "RSYNC", "tcp.port", 10},
         {"sametime.tcp_port", "SAMETIME", "tcp.port", 10},
         {"sigcomp.tcp.port2", "SIGCOMP", "tcp.port", 10},
-        {"synphasor.tcp_port", "SYNCHROPHASOR", "tcp.port", 10},
+        {"synphasor.tcp_port", "synphasor", "tcp.port", 10},
         {"tipc.alternate_port", "TIPC", "tcp.port", 10},
         {"vnc.alternate_port", "VNC", "tcp.port", 10},
         {"scop.port", "SCoP", "tcp.port", 10},
@@ -5148,8 +5115,8 @@ deprecated_port_pref(gchar *pref_name, const gchar *value)
         {"actrace.udp_port", "ACtrace", "udp.port", 10},
         {"brp.port", "BRP", "udp.port", 10},
         {"bvlc.additional_udp_port", "BVLC", "udp.port", 10},
-        {"capwap.udp.port.control", "CAPWAP-CONTROL", "udp.port", 10},
-        {"capwap.udp.port.data", "CAPWAP-CONTROL", "udp.port", 10},
+        {"capwap.udp.port.control", "capwap", "udp.port", 10},
+        {"capwap.udp.port.data", "capwap", "udp.port", 10},
         {"coap.udp_port", "CoAP", "udp.port", 10},
         {"enttec.udp_port", "ENTTEC", "udp.port", 10},
         {"forces.udp_alternate_port", "ForCES", "udp.port", 10},
@@ -5166,16 +5133,14 @@ deprecated_port_pref(gchar *pref_name, const gchar *value)
         {"rdt.default_udp_port", "RDT", "udp.port", 10},
         {"alc.default.udp_port", "ALC", "udp.port", 10},
         {"sigcomp.udp.port2", "SIGCOMP", "udp.port", 10},
-        {"synphasor.udp_port", "SYNCHROPHASOR", "udp.port", 10},
+        {"synphasor.udp_port", "synphasor", "udp.port", 10},
         {"tdmop.udpport", "TDMoP", "udp.port", 10},
         {"uaudp.port1", "UAUDP", "udp.port", 10},
         {"uaudp.port2", "UAUDP", "udp.port", 10},
         {"uaudp.port3", "UAUDP", "udp.port", 10},
         {"uaudp.port4", "UAUDP", "udp.port", 10},
         {"uhd.dissector_port", "UHD", "udp.port", 10},
-        {"vrt.dissector_port", "VITA 49", "udp.port", 10},
-        {"vuze-dht.udp_port", "Vuze-DHT", "udp.port", 10},
-        {"wimaxasncp.udp.wimax_port", "WiMAX ASN CP", "udp.port", 10},
+        {"vrt.dissector_port", "vrt", "udp.port", 10},
     };
 
     struct port_pref_name port_range_prefs[] = {
@@ -5244,21 +5209,46 @@ deprecated_port_pref(gchar *pref_name, const gchar *value)
     module_t *module;
     pref_t *pref;
 
-    for (i = 0; i < sizeof(port_prefs)/sizeof(struct port_pref_name); i++)
-    {
-        if (strcmp(pref_name, port_prefs[i].pref_name) == 0)
-        {
+    static gboolean sanity_checked;
+    if (!sanity_checked) {
+        sanity_checked = TRUE;
+        for (i = 0; i < G_N_ELEMENTS(port_prefs); i++) {
+            module = prefs_find_module(port_prefs[i].module_name);
+            if (!module) {
+                ws_g_warning("Deprecated ports pref check - module '%s' not found", port_prefs[i].module_name);
+                continue;
+            }
+            pref = prefs_find_preference(module, port_prefs[i].table_name);
+            if (!pref) {
+                ws_g_warning("Deprecated ports pref '%s.%s' not found", module->name, port_prefs[i].table_name);
+                continue;
+            }
+            if (pref->type != PREF_DECODE_AS_UINT && pref->type != PREF_DECODE_AS_RANGE) {
+                ws_g_warning("Deprecated ports pref '%s.%s' has wrong type: %#x (%s)", module->name, port_prefs[i].table_name, pref->type, prefs_pref_type_name(pref));
+            }
+        }
+    }
+
+    for (i = 0; i < G_N_ELEMENTS(port_prefs); i++) {
+        if (strcmp(pref_name, port_prefs[i].pref_name) == 0) {
             /* XXX - give an error if it doesn't fit in a guint? */
             uval = (guint)strtoul(value, &p, port_prefs[i].base);
             if (p == value || *p != '\0')
                 return FALSE;        /* number was bad */
 
-            module = prefs_find_module((gchar*)port_prefs[i].module_name);
+            module = prefs_find_module(port_prefs[i].module_name);
             pref = prefs_find_preference(module, port_prefs[i].table_name);
-            if (pref != NULL)
-            {
+            if (pref != NULL) {
                 module->prefs_changed_flags |= prefs_get_effect_flags(pref);
-                *pref->varp.uint = uval;
+                if (pref->type == PREF_DECODE_AS_UINT) {
+                    *pref->varp.uint = uval;
+                } else if (pref->type == PREF_DECODE_AS_RANGE) {
+                    // The legacy preference was a port number, but the new
+                    // preference is a port range. Add to existing range.
+                    if (uval) {
+                        prefs_range_add_value(pref, uval);
+                    }
+                }
             }
 
             /* If the value is zero, it wouldn't add to the Decode As tables */
@@ -5266,7 +5256,7 @@ deprecated_port_pref(gchar *pref_name, const gchar *value)
             {
                 sub_dissectors = find_dissector_table(port_prefs[i].table_name);
                 if (sub_dissectors != NULL) {
-                    handle = dissector_table_get_dissector_handle(sub_dissectors, (gchar*)port_prefs[i].module_name);
+                    handle = dissector_table_get_dissector_handle(sub_dissectors, port_prefs[i].module_name);
                     if (handle != NULL) {
                         dissector_change_uint(port_prefs[i].table_name, uval, handle);
                         decode_build_reset_list(port_prefs[i].table_name, dissector_table_get_type(sub_dissectors), GUINT_TO_POINTER(uval), NULL, NULL);
@@ -5298,7 +5288,7 @@ deprecated_port_pref(gchar *pref_name, const gchar *value)
                     g_assert_not_reached();
                 }
 
-                module = prefs_find_module((gchar*)port_range_prefs[i].module_name);
+                module = prefs_find_module(port_range_prefs[i].module_name);
                 pref = prefs_find_preference(module, port_range_prefs[i].table_name);
                 if (pref != NULL)
                 {
@@ -5307,7 +5297,7 @@ deprecated_port_pref(gchar *pref_name, const gchar *value)
                         return FALSE;        /* number was bad */
                     }
 
-                    handle = dissector_table_get_dissector_handle(sub_dissectors, (gchar*)port_range_prefs[i].module_name);
+                    handle = dissector_table_get_dissector_handle(sub_dissectors, port_range_prefs[i].module_name);
                     if (handle != NULL) {
 
                         for (range_i = 0; range_i < (*pref->varp.range)->nranges; range_i++) {
@@ -5757,8 +5747,7 @@ set_pref(gchar *pref_name, const gchar *value, void *private_data _U_,
                 }
             } else if (strcmp(module->name, "taps") == 0) {
                 /* taps preferences moved to "statistics" module */
-                if (strcmp(dotp, "update_interval") == 0 ||
-                    strcmp(dotp, "rtp_player_max_visible") == 0)
+                if (strcmp(dotp, "update_interval") == 0)
                     pref = prefs_find_preference(stats_module, dotp);
             } else if (strcmp(module->name, "packet_list") == 0) {
                 /* packet_list preferences moved to protocol module */
@@ -5824,7 +5813,7 @@ set_pref(gchar *pref_name, const gchar *value, void *private_data _U_,
                 /* Name of preference is the dissector table */
                 sub_dissectors = find_dissector_table(pref->name);
                 if (sub_dissectors != NULL) {
-                    handle = dissector_table_get_dissector_handle(sub_dissectors, (gchar*)module->title);
+                    handle = dissector_table_get_dissector_handle(sub_dissectors, module->title);
                     if (handle != NULL) {
                         if (uval != 0) {
                             dissector_change_uint(pref->name, uval, handle);
@@ -5899,7 +5888,7 @@ set_pref(gchar *pref_name, const gchar *value, void *private_data _U_,
                 /* Name of preference is the dissector table */
                 sub_dissectors = find_dissector_table(pref->name);
                 if (sub_dissectors != NULL) {
-                    handle = dissector_table_get_dissector_handle(sub_dissectors, (gchar*)module->title);
+                    handle = dissector_table_get_dissector_handle(sub_dissectors, module->title);
                     if (handle != NULL) {
                         /* Delete all of the old values from the dissector table */
 		                for (i = 0; i < (*pref->varp.range)->nranges; i++) {
@@ -6149,7 +6138,6 @@ prefs_pref_type_description(pref_t *pref)
         }
         g_string_append(enum_str, "\n(case-insensitive).");
         return g_string_free(enum_str, FALSE);
-        break;
     }
 
     case PREF_STRING:

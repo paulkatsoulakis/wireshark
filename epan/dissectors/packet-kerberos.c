@@ -586,7 +586,6 @@ read_keytab_file(const char *filename)
 	krb5_error_code ret;
 	krb5_keytab_entry key;
 	krb5_kt_cursor cursor;
-	enc_key_t *new_key;
 	static gboolean first_time=TRUE;
 
 	if (filename == NULL || filename[0] == 0) {
@@ -616,13 +615,15 @@ read_keytab_file(const char *filename)
 	}
 
 	do{
-		new_key=(enc_key_t *)g_malloc(sizeof(enc_key_t));
-		new_key->fd_num = -1;
-		new_key->next=enc_key_list;
 		ret = krb5_kt_next_entry(krb5_ctx, keytab, &key, &cursor);
 		if(ret==0){
+			enc_key_t *new_key;
 			int i;
 			char *pos;
+
+			new_key = g_new(enc_key_t, 1);
+			new_key->fd_num = -1;
+			new_key->next = enc_key_list;
 
 			/* generate origin string, describing where this key came from */
 			pos=new_key->key_origin;
@@ -753,13 +754,14 @@ read_keytab_file(const char *filename)
 	}
 
 	do{
-		new_key = (enc_key_t *)g_malloc(sizeof(enc_key_t));
-		new_key->fd_num = -1;
-		new_key->next=enc_key_list;
 		ret = krb5_kt_next_entry(krb5_ctx, keytab, &key, &cursor);
 		if(ret==0){
 			unsigned int i;
 			char *pos;
+
+			new_key = g_new0(enc_key_t, 1);
+			new_key->fd_num = -1;
+			new_key->next = enc_key_list;
 
 			/* generate origin string, describing where this key came from */
 			pos=new_key->key_origin;
@@ -2584,7 +2586,7 @@ dissect_kerberos_EncryptionKey(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
                                    EncryptionKey_sequence, hf_index, ett_kerberos_EncryptionKey);
 
 
-	if (private_data->key.keytype != 0) {
+	if (private_data->key.keytype != 0 && private_data->key.keylength > 0) {
 #ifdef HAVE_KERBEROS
 		add_encryption_key(actx->pinfo, private_data->key.keytype, private_data->key.keylength, private_data->key.keyvalue, "key");
 #endif
@@ -2941,7 +2943,6 @@ guint32 msgtype;
 static const value_string kerberos_PADATA_TYPE_vals[] = {
   {   0, "kRB5-PADATA-NONE" },
   {   1, "kRB5-PADATA-TGS-REQ" },
-  {   1, "kRB5-PADATA-AP-REQ" },
   {   2, "kRB5-PADATA-ENC-TIMESTAMP" },
   {   3, "kRB5-PADATA-PW-SALT" },
   {   5, "kRB5-PADATA-ENC-UNIX-TIME" },
@@ -2979,7 +2980,6 @@ static const value_string kerberos_PADATA_TYPE_vals[] = {
   { 129, "kRB5-PADATA-FOR-USER" },
   { 130, "kRB5-PADATA-FOR-X509-USER" },
   { 131, "kRB5-PADATA-FOR-CHECK-DUPS" },
-  { 132, "kRB5-PADATA-AS-CHECKSUM" },
   { 132, "kRB5-PADATA-PK-AS-09-BINDING" },
   { 133, "kRB5-PADATA-FX-COOKIE" },
   { 134, "kRB5-PADATA-AUTHENTICATION-SET" },
@@ -4459,7 +4459,7 @@ dissect_kerberos_EncryptedChallenge(gboolean implicit_tag _U_, tvbuff_t *tvb _U_
 
 
 /*--- End of included file: packet-kerberos-fn.c ---*/
-#line 1865 "./asn1/kerberos/packet-kerberos-template.c"
+#line 1867 "./asn1/kerberos/packet-kerberos-template.c"
 
 /* Make wrappers around exported functions for now */
 int
@@ -5621,7 +5621,7 @@ void proto_register_kerberos(void) {
         NULL, HFILL }},
 
 /*--- End of included file: packet-kerberos-hfarr.c ---*/
-#line 2246 "./asn1/kerberos/packet-kerberos-template.c"
+#line 2248 "./asn1/kerberos/packet-kerberos-template.c"
 	};
 
 	/* List of subtrees */
@@ -5707,7 +5707,7 @@ void proto_register_kerberos(void) {
     &ett_kerberos_KrbFastArmoredRep,
 
 /*--- End of included file: packet-kerberos-ettarr.c ---*/
-#line 2262 "./asn1/kerberos/packet-kerberos-template.c"
+#line 2264 "./asn1/kerberos/packet-kerberos-template.c"
 	};
 
 	static ei_register_info ei[] = {

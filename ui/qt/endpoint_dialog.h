@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef ENDPOINT_DIALOG_H
 #define ENDPOINT_DIALOG_H
@@ -18,27 +19,13 @@ public:
     explicit EndpointTreeWidget(QWidget *parent, register_ct_t* table);
     ~EndpointTreeWidget();
 
-#ifdef HAVE_GEOIP
-    bool hasGeoIPData() const { return has_geoip_data_; }
-#endif
-
     static void tapReset(void *conv_hash_ptr);
     static void tapDraw(void *conv_hash_ptr);
 
-#ifdef HAVE_GEOIP
-public:
-    const QList<int> columnToDb(int column) const { return col_to_db_.value(column, QList<int>()); }
-
-signals:
-    void geoIPStatusChanged();
-
-private:
-    QMap<int, QList<int> > col_to_db_; // Map tree columns to GeoIP databases
-    bool has_geoip_data_;
-#endif
-
 private:
     void updateItems();
+
+    address_type table_address_type_;
 
 private slots:
     void filterActionTriggered();
@@ -64,17 +51,10 @@ public slots:
     void captureFileClosing();
 
 private:
-#ifdef HAVE_GEOIP
-    QPushButton *map_bt_;
-#endif
 
     bool addTrafficTable(register_ct_t* table);
 
 private slots:
-#ifdef HAVE_GEOIP
-    void tabChanged();
-    void createMap();
-#endif
     void on_buttonBox_helpRequested();
 };
 

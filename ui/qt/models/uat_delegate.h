@@ -7,7 +7,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef UAT_DELEGATE_H
 #define UAT_DELEGATE_H
@@ -32,11 +33,7 @@ public:
     void setModelData(QWidget *editor, QAbstractItemModel *model,
                       const QModelIndex &index) const;
 
-    void updateEditorGeometry(QWidget *editor,
-            const QStyleOptionViewItem &option, const QModelIndex &index) const;
-
 private slots:
-    void applyDirectory(const QModelIndex& index);
     void applyFilename(const QModelIndex& index);
     void applyColor(const QModelIndex& index);
 

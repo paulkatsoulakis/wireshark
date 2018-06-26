@@ -9,19 +9,7 @@
 # By Gerald Combs <gerald@wireshark.org>
 # Copyright 1998 Gerald Combs
 #
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 COMMON_ARGS="--export-area-page"
 
@@ -92,8 +80,8 @@ for SIZE in 14x14 16x16 24x14 24x14 ; do
     HEIGHT=${SIZE/*x/}
     SIZE_DIR=${SIZE}
 
-    TWO_X_WIDTH=`expr $WIDTH \* 2`
-    TWO_X_HEIGHT=`expr $HEIGHT \* 2`
+    TWO_X_WIDTH=$(( WIDTH * 2 ))
+    TWO_X_HEIGHT=$(( HEIGHT * 2 ))
     ONE_X_ARGS="--export-width=${WIDTH} --export-height=${HEIGHT}"
     TWO_X_ARGS="--export-width=${TWO_X_WIDTH} --export-height=${TWO_X_HEIGHT}"
 
@@ -101,7 +89,7 @@ for SIZE in 14x14 16x16 24x14 24x14 ; do
     cd $SIZE_DIR || exit 1
 
     for ICON in $ICONS ; do
-        set_source_svgs $ICON
+        set_source_svgs "$ICON"
 
         if [ ! -f ${ONE_X_SVG} ] ; then
             >&2 echo "Skipping ${ONE_X_SVG}"
@@ -111,12 +99,14 @@ for SIZE in 14x14 16x16 24x14 24x14 ; do
         ONE_X_PNG=${ICON}.png
         TWO_X_PNG=${ICON}@2x.png
 
-        if [ $ONE_X_SVG -nt $ONE_X_PNG ] ; then
+        if [ $ONE_X_SVG -nt "$ONE_X_PNG" ] ; then
+            # shellcheck disable=SC2086
             inkscape $COMMON_ARGS $ONE_X_ARGS \
                 --file="$PWD/$ONE_X_SVG" --export-png="$PWD/$ONE_X_PNG" || exit 1
         fi
 
-        if [ $TWO_X_SVG -nt $TWO_X_PNG ] ; then
+        if [ $TWO_X_SVG -nt "$TWO_X_PNG" ] ; then
+            # shellcheck disable=SC2086
             inkscape $COMMON_ARGS $TWO_X_ARGS \
                 --file="$PWD/$TWO_X_SVG" --export-png="$PWD/$TWO_X_PNG" || exit 1
         fi

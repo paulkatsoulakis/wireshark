@@ -222,6 +222,8 @@ void ByteViewText::paintEvent(QPaintEvent *)
     painter.restore();
 
     // We can't do this in drawLine since the next line might draw over our rect.
+    // This looks best when our highlight and background have similar lightnesses.
+    // We might want to set a composition mode when that's not the case.
     if (!hover_outlines_.isEmpty()) {
         qreal pen_width = 1.0;
         qreal hover_alpha = 0.6;
@@ -229,11 +231,9 @@ void ByteViewText::paintEvent(QPaintEvent *)
         QColor ho_color = palette().text().color();
         if (marked_byte_offset_ < 0) {
             hover_alpha = 0.3;
-#if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
             if (devicePixelRatio() > 1) {
                 pen_width = 0.5;
             }
-#endif
         }
         ho_pen.setWidthF(pen_width);
         ho_color.setAlphaF(hover_alpha);
@@ -486,9 +486,11 @@ bool ByteViewText::addFormatRange(QList<QTextLayout::FormatRange> &fmt_list, int
         return false;
     case ModeField:
         format_range.format.setBackground(palette().highlight());
+        format_range.format.setForeground(palette().highlightedText());
         break;
     case ModeProtocol:
         format_range.format.setBackground(palette().window());
+        format_range.format.setForeground(palette().windowText());
         break;
     case ModeOffsetNormal:
         format_range.format.setForeground(offset_normal_fg_);

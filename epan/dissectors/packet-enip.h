@@ -92,9 +92,7 @@ typedef struct {
 } enip_request_info_t;
 
 typedef struct enip_conn_val {
-   guint16 ConnSerialNumber;
-   guint16 VendorID;
-   guint32 DeviceSerialNumber;
+   cip_connection_triad_t triad;
    guint32 O2TConnID;
    guint32 T2OConnID;
    guint8  TransportClass_trigger;
@@ -103,19 +101,23 @@ typedef struct enip_conn_val {
    guint32 close_frame;
    guint32 connid;
    cip_safety_epath_info_t safety;
-   gboolean motion;
    guint32 ClassID;
    guint32 ConnPoint;
 } enip_conn_val_t;
 
 enum enip_connid_type {ECIDT_UNKNOWN, ECIDT_O2T, ECIDT_T2O};
 
+typedef struct cip_io_data_input {
+   enip_conn_val_t* conn_info;
+   enum enip_connid_type connid_type;
+} cip_io_data_input;
+
 /* proto_data types */
 #define ENIP_REQUEST_INFO     0
 #define ENIP_CONNECTION_INFO  1
 
-void enip_close_cip_connection( packet_info *pinfo, guint16 ConnSerialNumber, guint16 VendorID, guint32 DeviceSerialNumber );
-void enip_mark_connection_triad( packet_info *pinfo, guint16 ConnSerialNumber, guint16 VendorID, guint32 DeviceSerialNumber );
+void enip_close_cip_connection(packet_info *pinfo, const cip_connection_triad_t* triad);
+void enip_mark_connection_triad(packet_info *pinfo, const cip_connection_triad_t* triad);
 
 extern attribute_info_t enip_attribute_vals[99];
 

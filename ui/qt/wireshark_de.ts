@@ -1,12 +1,10 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE TS>
-<TS version="2.1" language="de">
+<?xml version="1.0" ?><!DOCTYPE TS><TS language="de" version="2.1">
 <context>
     <name>Abbreviation</name>
     <message>
-        <source></source>
+        <source/>
         <comment>for &quot;not applicable&quot;</comment>
-        <translation></translation>
+        <translation type="unfinished"/>
     </message>
 </context>
 <context>
@@ -747,25 +745,16 @@
     <message numerus="yes">
         <source>%1, error after %Ln packet(s)</source>
         <oldsource>%1, error after %2 packets</oldsource>
-        <translation type="vanished">
-            <numerusform>%1, Fehler nach %Ln Paket</numerusform>
-            <numerusform>%1, Fehler nach %Ln Paketen</numerusform>
-        </translation>
+        <translation type="vanished"><numerusform>%1, Fehler nach %Ln Paket</numerusform><numerusform>%1, Fehler nach %Ln Paketen</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%1, timed out at %Ln packet(s)</source>
         <oldsource>%1, timed out at %2 packets</oldsource>
-        <translation type="vanished">
-            <numerusform>%1, Zeitüberschreitung nach %Ln Paket</numerusform>
-            <numerusform>%1, Zeitüberschreitung nach %Ln Paketen</numerusform>
-        </translation>
+        <translation type="vanished"><numerusform>%1, Zeitüberschreitung nach %Ln Paket</numerusform><numerusform>%1, Zeitüberschreitung nach %Ln Paketen</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%1, %Ln packet(s)</source>
-        <translation type="vanished">
-            <numerusform>%1, %Ln Paket</numerusform>
-            <numerusform>%1, %Ln Pakete</numerusform>
-        </translation>
+        <translation type="vanished"><numerusform>%1, %Ln Paket</numerusform><numerusform>%1, %Ln Pakete</numerusform></translation>
     </message>
     <message>
         <source>Prepend packets</source>
@@ -840,25 +829,17 @@
         <translation>Fehler beim Öffnen der Datei</translation>
     </message>
     <message numerus="yes">
-        <source>%1, error after %Ln record(s)</source>
-        <translation>
-            <numerusform>%1, Fehler nach %Ln Paket</numerusform>
-            <numerusform>%1, Fehler nach %Ln Paketen</numerusform>
-        </translation>
+        <source>%1, error after %Ln data record(s)</source>
+        <oldsource>%1, error after %Ln record(s)</oldsource>
+        <translation><numerusform>%1, Fehler nach %Ln Daten Record</numerusform><numerusform>%1, Fehler nach %Ln Daten Records</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%1, timed out at %Ln data record(s)</source>
-        <translation>
-            <numerusform>%1, Zeitüberschreitung nach %Ln Dateneintrag</numerusform>
-            <numerusform>%1, Zeitüberschreitung nach %Ln Dateneinträgen</numerusform>
-        </translation>
+        <translation><numerusform>%1, Zeitüberschreitung nach %Ln Dateneintrag</numerusform><numerusform>%1, Zeitüberschreitung nach %Ln Dateneinträgen</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%1, %Ln data record(s)</source>
-        <translation>
-            <numerusform>%1, %Ln Dateneintrag</numerusform>
-            <numerusform>%1, %Ln Dateneinträge</numerusform>
-        </translation>
+        <translation><numerusform>%1, %Ln Dateneintrag</numerusform><numerusform>%1, %Ln Dateneinträge</numerusform></translation>
     </message>
     <message>
         <source>unknown</source>
@@ -1104,6 +1085,28 @@
     </message>
 </context>
 <context>
+    <name>CaptureInfoDialog</name>
+    <message>
+        <source>Capture Information</source>
+        <translation>Mitschnittinformationen</translation>
+    </message>
+    <message>
+        <source>Stop Capture</source>
+        <translation>Aufzeichnen benden</translation>
+    </message>
+    <message>
+        <source>%1 packets, %2:%3:%4</source>
+        <translation>%1 Pakete, %2:%3:%4</translation>
+    </message>
+</context>
+<context>
+    <name>CaptureInfoModel</name>
+    <message>
+        <source>Other</source>
+        <translation>Weitere</translation>
+    </message>
+</context>
+<context>
     <name>CaptureInterfacesDialog</name>
     <message>
         <source>Input</source>
@@ -1176,6 +1179,10 @@
     <message>
         <source>hours</source>
         <translation>Stunden</translation>
+    </message>
+    <message>
+        <source>Show capture information during live capture</source>
+        <translation>Mitschnittinformationen während der Aufzeichnung anzeigen</translation>
     </message>
     <message>
         <source>Stop capturing after the specified number of packets have been captured.</source>
@@ -1302,10 +1309,6 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
     <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Show the capture info dialog while capturing.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Mitschnittinformationen während der Aufzeichnung anzeigen.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Show extra capture information dialog</source>
-        <translation>Extra Mitschnittinformationen anzeigen</translation>
     </message>
     <message>
         <source>Name Resolution</source>
@@ -1457,7 +1460,7 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
     <name>ColoringRulesDelegate</name>
     <message>
         <source>the &quot;@&quot; symbol will be ignored.</source>
-        <translation type="unfinished">das &quot;@&quot; Symbol wird ignoriert.</translation>
+        <translation>das &quot;@&quot; Symbol wird ignoriert.</translation>
     </message>
 </context>
 <context>
@@ -1465,14 +1468,6 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
     <message>
         <source>Dialog</source>
         <translation>Dialog</translation>
-    </message>
-    <message>
-        <source>Name</source>
-        <translation type="vanished">Name</translation>
-    </message>
-    <message>
-        <source>Filter</source>
-        <translation type="vanished">Filter</translation>
     </message>
     <message>
         <source>&lt;small&gt;&lt;i&gt;A hint.&lt;/i&gt;&lt;/small&gt;</source>
@@ -1515,10 +1510,6 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
         <translation>Als Filter anwenden</translation>
     </message>
     <message>
-        <source>Coloring Rules</source>
-        <translation type="vanished">Einfärbungsregeln</translation>
-    </message>
-    <message>
         <source>Import</source>
         <translation>Importieren</translation>
     </message>
@@ -1535,12 +1526,8 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
         <translation>Filter in eine Datei sichern.</translation>
     </message>
     <message>
-        <source>the &quot;@&quot; symbol will be ignored.</source>
-        <translation type="vanished">das &quot;@&quot; Symbol wird ignoriert.</translation>
-    </message>
-    <message>
         <source>Coloring Rules %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Einfärbungsregeln %1</translation>
     </message>
     <message>
         <source>Double click to edit. Drag to move. Rules are processed in order until a match is found.</source>
@@ -1562,24 +1549,20 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
         <source>Wireshark doesn&apos;t recognize one or more of your coloring rules. They have been disabled.</source>
         <translation>Wireshark erkennt eine oder mehrere der Einfärbungsregeln nicht. Diese wurden deaktiviert.</translation>
     </message>
-    <message>
-        <source>Unable to save coloring rules: %s</source>
-        <translation type="vanished">Einfärbungsregeln können nicht gespeichert werden: %s</translation>
-    </message>
 </context>
 <context>
     <name>ColoringRulesModel</name>
     <message>
         <source>Unable to save coloring rules: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Einfärbungsregeln können nicht gespeichert werden: %1</translation>
     </message>
     <message>
         <source>Name</source>
-        <translation type="unfinished">Name</translation>
+        <translation>Name</translation>
     </message>
     <message>
         <source>Filter</source>
-        <translation type="unfinished">Filter</translation>
+        <translation>Filter</translation>
     </message>
 </context>
 <context>
@@ -2036,21 +2019,6 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
     </message>
 </context>
 <context>
-    <name>EndpointDialog</name>
-    <message>
-        <source>Map</source>
-        <translation>Karte</translation>
-    </message>
-    <message>
-        <source>Draw IPv4 or IPv6 endpoints on a map.</source>
-        <translation>IPv4 und IPv6 Endpunkte auf einer Karte anzeigen.</translation>
-    </message>
-    <message>
-        <source>Map file error</source>
-        <translation>Fehler bei der Kartendatei</translation>
-    </message>
-</context>
-<context>
     <name>ExpertInfoDialog</name>
     <message>
         <source>Dialog</source>
@@ -2288,6 +2256,13 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
     </message>
 </context>
 <context>
+    <name>ExtArgSelector</name>
+    <message>
+        <source>Reload data</source>
+        <translation>Daten neu laden</translation>
+    </message>
+</context>
+<context>
     <name>ExtcapArgumentFileSelection</name>
     <message>
         <source>All Files (</source>
@@ -2308,6 +2283,10 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
     <message>
         <source>Start</source>
         <translation>Start</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation>Standard</translation>
     </message>
     <message>
         <source>Extcap Help cannot be found</source>
@@ -2358,10 +2337,7 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
     <message numerus="yes">
         <source>%Ln File(s) in Set</source>
         <oldsource>%1 File%2 in Set</oldsource>
-        <translation>
-            <numerusform>%Ln Datei im Dateisatz</numerusform>
-            <numerusform>%Ln Dateien im Dateisatz</numerusform>
-        </translation>
+        <translation><numerusform>%Ln Datei im Dateisatz</numerusform><numerusform>%Ln Dateien im Dateisatz</numerusform></translation>
     </message>
 </context>
 <context>
@@ -2646,12 +2622,12 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
         <translation>Suchpfad für Extcap Plugins</translation>
     </message>
     <message>
-        <source>GeoIP path</source>
-        <translation>GeoIP Pfad</translation>
+        <source>MaxMind DB path</source>
+        <translation>MaxMind DB Pfad</translation>
     </message>
     <message>
-        <source>GeoIP database search path</source>
-        <translation>Suchpfad für GeoIP Datenbank</translation>
+        <source>MaxMind DB database search path</source>
+        <translation>Suchpfad für MaxMind Datenbank</translation>
     </message>
     <message>
         <source>MIB/PIB path</source>
@@ -2692,17 +2668,11 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
     </message>
     <message numerus="yes">
         <source>%Ln client pkt(s), </source>
-        <translation type="vanished">
-            <numerusform>%Ln Client Paket,</numerusform>
-            <numerusform>%Ln Client Pakete,</numerusform>
-        </translation>
+        <translation type="vanished"><numerusform>%Ln Client Paket,</numerusform><numerusform>%Ln Client Pakete,</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%Ln server pkt(s), </source>
-        <translation type="vanished">
-            <numerusform>%Ln Server Paket,</numerusform>
-            <numerusform>%Ln Server Pakete,</numerusform>
-        </translation>
+        <translation type="vanished"><numerusform>%Ln Server Paket,</numerusform><numerusform>%Ln Server Pakete,</numerusform></translation>
     </message>
     <message>
         <source>ASCII</source>
@@ -2746,24 +2716,15 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
     </message>
     <message numerus="yes">
         <source>%Ln &lt;span style=&quot;color: %1; background-color:%2&quot;&gt;client&lt;/span&gt; pkt(s), </source>
-        <translation>
-            <numerusform>%Ln &lt;span style=&quot;color: %1; background-color:%2&quot;&gt;Client&lt;/span&gt; Paket,</numerusform>
-            <numerusform>%Ln &lt;span style=&quot;color: %1; background-color:%2&quot;&gt;Client&lt;/span&gt; Pakete,</numerusform>
-        </translation>
+        <translation><numerusform>%Ln &lt;span style=&quot;color: %1; background-color:%2&quot;&gt;Client&lt;/span&gt; Paket,</numerusform><numerusform>%Ln &lt;span style=&quot;color: %1; background-color:%2&quot;&gt;Client&lt;/span&gt; Pakete,</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%Ln &lt;span style=&quot;color: %1; background-color:%2&quot;&gt;server&lt;/span&gt; pkt(s), </source>
-        <translation>
-            <numerusform>%Ln &lt;span style=&quot;color: %1; background-color:%2&quot;&gt;Server&lt;/span&gt; Paket,</numerusform>
-            <numerusform>%Ln &lt;span style=&quot;color: %1; background-color:%2&quot;&gt;Server&lt;/span&gt; Pakete,</numerusform>
-        </translation>
+        <translation><numerusform>%Ln &lt;span style=&quot;color: %1; background-color:%2&quot;&gt;Server&lt;/span&gt; Paket,</numerusform><numerusform>%Ln &lt;span style=&quot;color: %1; background-color:%2&quot;&gt;Server&lt;/span&gt; Pakete,</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%Ln turn(s).</source>
-        <translation>
-            <numerusform>%Ln Runde.</numerusform>
-            <numerusform>%Ln Runden.</numerusform>
-        </translation>
+        <translation><numerusform>%Ln Runde.</numerusform><numerusform>%Ln Runden.</numerusform></translation>
     </message>
     <message>
         <source> Click to select.</source>
@@ -2819,10 +2780,7 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
     </message>
     <message numerus="yes">
         <source>%Ln total stream(s).</source>
-        <translation>
-            <numerusform>%n Stream.</numerusform>
-            <numerusform>&amp;Ln Stream insgesamt.</numerusform>
-        </translation>
+        <translation><numerusform>%n Stream.</numerusform><numerusform>&amp;Ln Stream insgesamt.</numerusform></translation>
     </message>
     <message>
         <source>File closed.</source>
@@ -2879,6 +2837,30 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
     <message>
         <source>Sample marked packet text</source>
         <translation>Beispieltext für markierte Pakete</translation>
+    </message>
+    <message>
+        <source>Sample active selected item</source>
+        <translation>Beispieltext für ein aktives ausgewähltes Element</translation>
+    </message>
+    <message>
+        <source>Style:</source>
+        <translation>Stil:</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation>Standard</translation>
+    </message>
+    <message>
+        <source>Flat</source>
+        <translation>Flach</translation>
+    </message>
+    <message>
+        <source>Gradient</source>
+        <translation>Gradient</translation>
+    </message>
+    <message>
+        <source>Sample inactive selected item</source>
+        <translation>Beispieltext für ein inaktives ausgewähltes Element</translation>
     </message>
     <message>
         <source>Sample &quot;Follow Stream&quot; client text</source>
@@ -5545,200 +5527,13 @@ Achtung: Eine Option MUSS ausgewählt sein.</translation>
 </context>
 <context>
     <name>MainWelcome</name>
-    <message>
-        <source>Form</source>
-        <translation>Anordnung</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:large;&quot;&gt;Welcome to Wireshark&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:large;&quot;&gt;Willkommen bei Wireshark&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open a file on your file system&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Eine Datei vom Dateisystem öffnen&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>&lt;h2&gt;Open&lt;/h2&gt;</source>
-        <translation>&lt;h2&gt;Öffnen&lt;/h2&gt;</translation>
-    </message>
-    <message>
-        <source>Recent capture files</source>
-        <translation>Letzte Mitschnittdateien</translation>
-    </message>
-    <message>
-        <source>Capture files that have been opened previously</source>
-        <translation>Mitschnittdateien, die zuvor geöffnet wurden</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Capture live packets from your network.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Datenverkehr vom Netzwerk aufzeichnen.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>&lt;h2&gt;Capture&lt;/h2&gt;</source>
-        <translation>&lt;h2&gt;Aufzeichnen&lt;/h2&gt;</translation>
-    </message>
-    <message>
-        <source>…using this filter:</source>
-        <translation>...mit diesem Filter:</translation>
-    </message>
-    <message>
-        <source>Interface list</source>
-        <translation>Schnittstellenliste</translation>
-    </message>
-    <message>
-        <source>List of available capture interfaces</source>
-        <translation>Liste von verfügbaren Mitschnittschnittstellen</translation>
-    </message>
-    <message>
-        <source>&lt;h2&gt;Learn&lt;/h2&gt;</source>
-        <translation>&lt;h2&gt;Dokumentation&lt;/h2&gt;</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head&gt;
-&lt;style&gt;
-a:link {
-  color: inherit;
-  text-decoration: none;
-}
-a:hover {
-  color: inherit;
-  text-decoration: underline;
-}
-&lt;/style&gt;
-&lt;/head&gt;
-&lt;body&gt;
-
-&lt;table&gt;&lt;tr&gt;
-&lt;th&gt;&lt;a href=&quot;https://www.wireshark.org/docs/wsug_html_chunked/&quot;&gt;User&apos;s Guide&lt;/a&gt;&lt;/th&gt;
-
-&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
-
-&lt;th&gt;&lt;a href=&quot;https://wiki.wireshark.org/&quot;&gt;Wiki&lt;/a&gt;&lt;/th&gt;
-
-&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
-
-&lt;th&gt;&lt;a href=&quot;https://ask.wireshark.org/&quot;&gt;Questions and Answers&lt;/a&gt;&lt;/th&gt;
-
-&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
-
-&lt;th&gt;&lt;a href=&quot;https://www.wireshark.org/lists/&quot;&gt;Mailing Lists&lt;/a&gt;&lt;/th&gt;
-
-&lt;/tr&gt;&lt;/table&gt;
-&lt;/body&gt;&lt;/html&gt;</source>
-        <oldsource>&lt;html&gt;&lt;head&gt;
-&lt;style&gt;
-a:link {
-  color: inherit;
-  text-decoration: none;
-}
-a:hover {
-  color: inherit;
-  text-decoration: underline;
-}
-&lt;/style&gt;
-&lt;/head&gt;
-&lt;body&gt;
-
-&lt;table&gt;&lt;tr&gt;
-&lt;th&gt;&lt;a href=&quot;http://www.wireshark.org/docs/wsug_html_chunked/&quot;&gt;User&apos;s Guide&lt;/a&gt;&lt;/th&gt;
-
-&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
-
-&lt;th&gt;&lt;a href=&quot;http://wiki.wireshark.org/&quot;&gt;Wiki&lt;/a&gt;&lt;/th&gt;
-
-&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
-
-&lt;th&gt;&lt;a href=&quot;http://ask.wireshark.org/&quot;&gt;Questions and Answers&lt;/a&gt;&lt;/th&gt;
-
-&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
-
-&lt;th&gt;&lt;a href=&quot;http://www.wireshark.org/lists/&quot;&gt;Mailing Lists&lt;/a&gt;&lt;/th&gt;
-
-&lt;/tr&gt;&lt;/table&gt;
-&lt;/body&gt;&lt;/html&gt;</oldsource>
-        <translation>&lt;html&gt;&lt;head&gt;
-&lt;style&gt;
-a:link {
-color: inherit;
-text-decoration: none;
-}
-a:hover {
-color: inherit;
-text-decoration: underline;
-}
-&lt;/style&gt;
-&lt;/head&gt;
-&lt;body&gt;
-
-&lt;table&gt;&lt;tr&gt;
-&lt;th&gt;&lt;a href=&quot;https://www.wireshark.org/docs/wsug_html_chunked/&quot;&gt;Benutzerhandbuch (en)&lt;/a&gt;&lt;/th&gt;
-
-&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
-
-&lt;th&gt;&lt;a href=&quot;https://wiki.wireshark.org/&quot;&gt;Wiki (en)&lt;/a&gt;&lt;/th&gt;
-
-&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
-
-&lt;th&gt;&lt;a href=&quot;https://ask.wireshark.org/&quot;&gt;Fragen und Antworten (en)&lt;/a&gt;&lt;/th&gt;
-
-&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
-
-&lt;th&gt;&lt;a href=&quot;https://www.wireshark.org/lists/&quot;&gt;Mailing Listen (en)&lt;/a&gt;&lt;/th&gt;
-
-&lt;/tr&gt;&lt;/table&gt;
-&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Show in Finder</source>
-        <translation>Im Finder anzeigen</translation>
-    </message>
-    <message>
-        <source>Show in Folder</source>
-        <translation>Im Ordner anzeigen</translation>
-    </message>
-    <message>
-        <source>All interfaces shown</source>
-        <translation>Alle Schnittstellen angezeigt</translation>
-    </message>
     <message numerus="yes">
         <source>%n interface(s) shown, %1 hidden</source>
         <oldsource>%Ln interface(s) shown</oldsource>
-        <translation>
-            <numerusform>%n Schnittstelle angezeigt, %1 versteckt</numerusform>
-            <numerusform>%n Schnittstellen angezeigt, %1 versteckt</numerusform>
+        <translation type="obsolete">
+            <numerusform>%n interface shown, %1 hidden</numerusform>
+            <numerusform>%n interfaces shown, %1 hidden</numerusform>
         </translation>
-    </message>
-    <message>
-        <source>You are sniffing the glue that holds the Internet together using Wireshark </source>
-        <translation>Mit Wireshark den Kleber schnüffeln, der das Internet zusammenhält.</translation>
-    </message>
-    <message>
-        <source>You are running Wireshark </source>
-        <translation>Sie nutzen Wireshark </translation>
-    </message>
-    <message>
-        <source>.</source>
-        <translation>.</translation>
-    </message>
-    <message>
-        <source> You receive automatic updates.</source>
-        <translation>Updates werden automatisch heruntergeladen.</translation>
-    </message>
-    <message>
-        <source> You have disabled automatic updates.</source>
-        <translation>Automatische Aktualisierung ist deaktiviert.</translation>
-    </message>
-    <message>
-        <source>not found</source>
-        <translation>nicht gefunden</translation>
-    </message>
-    <message>
-        <source>Copy file path</source>
-        <translation>Dateipfad kopieren</translation>
-    </message>
-    <message>
-        <source>Remove</source>
-        <translation>Entfernen</translation>
     </message>
 </context>
 <context>
@@ -6645,14 +6440,6 @@ text-decoration: underline;
         <translation>HTTP Lastverteilung</translation>
     </message>
     <message>
-        <source>Referers</source>
-        <translation>Referers</translation>
-    </message>
-    <message>
-        <source>HTTP referers</source>
-        <translation>HTTP Referers</translation>
-    </message>
-    <message>
         <source>Packet Lengths</source>
         <translation>Paketlängen</translation>
     </message>
@@ -7023,6 +6810,14 @@ text-decoration: underline;
     <message>
         <source>SSL Stream</source>
         <translation>SSL Stream</translation>
+    </message>
+    <message>
+        <source>Request Sequences</source>
+        <translation>Anfrage Sequenzen</translation>
+    </message>
+    <message>
+        <source>HTTP Request Sequences</source>
+        <translation>HTTP Anfrage Sequenzen</translation>
     </message>
     <message>
         <source>Decode &amp;As…</source>
@@ -7668,10 +7463,7 @@ text-decoration: underline;
     <message numerus="yes">
         <source>Export SSL Session Keys (%Ln key(s))</source>
         <oldsource>Export SSL Session Keys (%1 key%2</oldsource>
-        <translation>
-            <numerusform>SSL Sitzungsschlüssel exportieren (%Ln Schlüssel)</numerusform>
-            <numerusform>SSL Sitzungsschlüssel exportieren (%Ln Schlüssel)</numerusform>
-        </translation>
+        <translation><numerusform>SSL Sitzungsschlüssel exportieren (%Ln Schlüssel)</numerusform><numerusform>SSL Sitzungsschlüssel exportieren (%Ln Schlüssel)</numerusform></translation>
     </message>
     <message>
         <source>Raw data (*.bin *.dat *.raw);;All Files (</source>
@@ -7808,22 +7600,6 @@ text-decoration: underline;
     <message>
         <source>Confirm unsaved capture files</source>
         <translation>Bei ungesicherten Mitschnittdateien nachfragen</translation>
-    </message>
-    <message>
-        <source>If checked the packet detail items will be automatically scrolled when they are expanded.</source>
-        <translation>Wenn aktiviert scrollen ausgeklappte Paketdetails automatisch.</translation>
-    </message>
-    <message>
-        <source>Automatically scroll packet details</source>
-        <translation>Automatisches Scrollen der Paketdetails</translation>
-    </message>
-    <message>
-        <source>Percentage distance from the top to scroll packet details.</source>
-        <translation>Prozentualer Abstand von oben bis zu den scrollenden Paketdetails.</translation>
-    </message>
-    <message>
-        <source>Packet detail scroll percentage:</source>
-        <translation>Prozentualer Scrollfortschritt Paketdetails:</translation>
     </message>
     <message>
         <source>Main toolbar style:</source>
@@ -11123,17 +10899,11 @@ text-decoration: underline;
     </message>
     <message numerus="yes">
         <source>%Ln node(s)</source>
-        <translation>
-            <numerusform>%Ln Node</numerusform>
-            <numerusform>%Ln Nodes</numerusform>
-        </translation>
+        <translation><numerusform>%Ln Node</numerusform><numerusform>%Ln Nodes</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%Ln item(s)</source>
-        <translation>
-            <numerusform>%Ln Element</numerusform>
-            <numerusform>%Ln Elemente</numerusform>
-        </translation>
+        <translation><numerusform>%Ln Element</numerusform><numerusform>%Ln Elemente</numerusform></translation>
     </message>
     <message>
         <source>Portable Document Format (*.pdf)</source>
@@ -11468,10 +11238,7 @@ text-decoration: underline;
     </message>
     <message numerus="yes">
         <source>Frame %1, %2, %Ln byte(s).</source>
-        <translation>
-            <numerusform>Frame %1, %2, %Ln Byte.</numerusform>
-            <numerusform>Frame %1, %2, %Ln Bytes.</numerusform>
-        </translation>
+        <translation><numerusform>Frame %1, %2, %Ln Byte.</numerusform><numerusform>Frame %1, %2, %Ln Bytes.</numerusform></translation>
     </message>
     <message>
         <source>None</source>
@@ -11534,6 +11301,10 @@ text-decoration: underline;
         <translation>UTF-8</translation>
     </message>
     <message>
+        <source>UTF-16</source>
+        <translation>UTF-16</translation>
+    </message>
+    <message>
         <source>YAML</source>
         <translation>YAML</translation>
     </message>
@@ -11551,10 +11322,7 @@ text-decoration: underline;
     </message>
     <message numerus="yes">
         <source>Displaying %Ln byte(s).</source>
-        <translation>
-            <numerusform>Zeige %Ln Byte an.</numerusform>
-            <numerusform>Zeige %Ln Bytes an.</numerusform>
-        </translation>
+        <translation><numerusform>Zeige %Ln Byte an.</numerusform><numerusform>Zeige %Ln Bytes an.</numerusform></translation>
     </message>
     <message>
         <source>Regex Find:</source>
@@ -12650,6 +12418,169 @@ text-decoration: underline;
     <message>
         <source>Comments</source>
         <translation>Kommentare</translation>
+    </message>
+</context>
+<context>
+    <name>WelcomePage</name>
+    <message>
+        <source>Form</source>
+        <translation>Anordnung</translation>
+    </message>
+    <message>
+        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:large;&quot;&gt;Welcome to Wireshark&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:large;&quot;&gt;Willkommen zu Wireshark&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open a file on your file system&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Eine Datei aus dem Dateisystem öffnen&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;h2&gt;Open&lt;/h2&gt;</source>
+        <translation>&lt;h2&gt;Öffnen&lt;/h2&gt;</translation>
+    </message>
+    <message>
+        <source>Recent capture files</source>
+        <translation>Zuletzt verwendete Mitschnittdateien</translation>
+    </message>
+    <message>
+        <source>Capture files that have been opened previously</source>
+        <translation>Zuletzt geöffnete Mitschnittdateien</translation>
+    </message>
+    <message>
+        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Capture live packets from your network.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Live Pakete vom Netzwerk aufzeichnen.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;h2&gt;Capture&lt;/h2&gt;</source>
+        <translation>&lt;h2&gt;Aufzeichnen&lt;/h2&gt;</translation>
+    </message>
+    <message>
+        <source>…using this filter:</source>
+        <translation>...mit diesem Filter:</translation>
+    </message>
+    <message>
+        <source>Interface list</source>
+        <translation>Schnittstellenliste</translation>
+    </message>
+    <message>
+        <source>List of available capture interfaces</source>
+        <translation>Liste von verfügbaren Mitschnittschnittstellen</translation>
+    </message>
+    <message>
+        <source>&lt;h2&gt;Learn&lt;/h2&gt;</source>
+        <translation>&lt;h2&gt;Dokumentation&lt;/h2&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;html&gt;&lt;head&gt;
+&lt;style&gt;
+a:link {
+  color: inherit;
+  text-decoration: none;
+}
+a:hover {
+  color: inherit;
+  text-decoration: underline;
+}
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+
+&lt;table&gt;&lt;tr&gt;
+&lt;th&gt;&lt;a href=&quot;https://www.wireshark.org/docs/wsug_html_chunked/&quot;&gt;User's Guide&lt;/a&gt;&lt;/th&gt;
+
+&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
+
+&lt;th&gt;&lt;a href=&quot;https://wiki.wireshark.org/&quot;&gt;Wiki&lt;/a&gt;&lt;/th&gt;
+
+&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
+
+&lt;th&gt;&lt;a href=&quot;https://ask.wireshark.org/&quot;&gt;Questions and Answers&lt;/a&gt;&lt;/th&gt;
+
+&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
+
+&lt;th&gt;&lt;a href=&quot;https://www.wireshark.org/lists/&quot;&gt;Mailing Lists&lt;/a&gt;&lt;/th&gt;
+
+&lt;/tr&gt;&lt;/table&gt;
+&lt;/body&gt;&lt;/html&gt;</source>
+        <translation>&lt;html&gt;&lt;head&gt;
+&lt;style&gt;
+a:link {
+color: inherit;
+text-decoration: none;
+}
+a:hover {
+color: inherit;
+text-decoration: underline;
+}
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+
+&lt;table&gt;&lt;tr&gt;
+&lt;th&gt;&lt;a href=&quot;https://www.wireshark.org/docs/wsug_html_chunked/&quot;&gt;Benutzerhandbuch (en)&lt;/a&gt;&lt;/th&gt;
+
+&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
+
+&lt;th&gt;&lt;a href=&quot;https://wiki.wireshark.org/&quot;&gt;Wiki (en)&lt;/a&gt;&lt;/th&gt;
+
+&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
+
+&lt;th&gt;&lt;a href=&quot;https://ask.wireshark.org/&quot;&gt;Fragen und Antworten (en)&lt;/a&gt;&lt;/th&gt;
+
+&lt;td style=&quot;padding-left: 8px; padding-right: 8px;&quot;&gt;·&lt;/td&gt;
+
+&lt;th&gt;&lt;a href=&quot;https://www.wireshark.org/lists/&quot;&gt;Mailing Listen (en)&lt;/a&gt;&lt;/th&gt;
+
+&lt;/tr&gt;&lt;/table&gt;
+&lt;/body&gt;&lt;/html&gt;</translation>
+    </message>
+    <message>
+        <source>Show in Finder</source>
+        <translation>Im Finder anzeigen</translation>
+    </message>
+    <message>
+        <source>Show in Folder</source>
+        <translation>Im Ordner anzeigen</translation>
+    </message>
+    <message>
+        <source>All interfaces shown</source>
+        <translation>Alle Schnittstellen anzeigen</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n interface(s) shown, %1 hidden</source>
+        <translation><numerusform>%n Schnittstelle angezeigt, %1 versteckt</numerusform><numerusform>%n Schnittstellen angezeigt, %1 versteckt</numerusform></translation>
+    </message>
+    <message>
+        <source>You are sniffing the glue that holds the Internet together using Wireshark </source>
+        <translation>Mit Wireshark den Kleber schnüffeln, der das Internet zusammenhält.</translation>
+    </message>
+    <message>
+        <source>You are running Wireshark </source>
+        <translation>Sie nutzen Wireshark </translation>
+    </message>
+    <message>
+        <source>.</source>
+        <translation>.</translation>
+    </message>
+    <message>
+        <source> You receive automatic updates.</source>
+        <translation>Updates werden automatisch heruntergeladen.</translation>
+    </message>
+    <message>
+        <source> You have disabled automatic updates.</source>
+        <translation>Automatische Aktualisierung ist deaktiviert.</translation>
+    </message>
+    <message>
+        <source>not found</source>
+        <translation>nicht gefunden</translation>
+    </message>
+    <message>
+        <source>Copy file path</source>
+        <translation>Dateipfad kopieren</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Entfernen</translation>
     </message>
 </context>
 <context>

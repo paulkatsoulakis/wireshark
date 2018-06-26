@@ -746,6 +746,10 @@ static int hf_pn_io_am_location_reserved1 = -1;
 static int hf_pn_io_am_location_reserved2 = -1;
 static int hf_pn_io_am_location_reserved3 = -1;
 static int hf_pn_io_am_location_reserved4 = -1;
+static int hf_pn_io_am_location_beginslotnum = -1;
+static int hf_pn_io_am_location_beginsubslotnum = -1;
+static int hf_pn_io_am_location_endslotnum = -1;
+static int hf_pn_io_am_location_endsubslotnum = -1;
 static int hf_pn_io_am_software_revision = -1;
 static int hf_pn_io_am_hardware_revision = -1;
 static int hf_pn_io_am_type_identification = -1;
@@ -1531,16 +1535,20 @@ static const value_string pn_io_error_code2_pnio_63[] = {
 
 static const value_string pn_io_error_code2_pnio_64[] = {
     /* RMPM */
-    { 0, "ArgsLength invalid" },
-    { 1, "Unknown Blocks" },
-    { 2, "IOCR Missing" },
-    { 3, "Wrong AlarmCRBlock count" },
-    { 4, "Out of AR Resources" },
-    { 5, "AR UUID unknown" },
-    { 6, "State conflict" },
-    { 7, "Out of Provider, Consumer or Alarm Resources" },
-    { 8, "Out of Memory" },
-    { 0, NULL }
+    {  0, "ArgsLength invalid" },
+    {  1, "Unknown Blocks" },
+    {  2, "IOCR Missing" },
+    {  3, "Wrong AlarmCRBlock count" },
+    {  4, "Out of AR Resources" },
+    {  5, "AR UUID unknown" },
+    {  6, "State conflict" },
+    {  7, "Out of Provider, Consumer or Alarm Resources" },
+    {  8, "Out of Memory" },
+    {  9, "Pdev already owned" },
+    { 10, "ARset State conflict during connection establishment" },
+    { 11, "ARset Parameter conflict during connection establishment" },
+    { 12, "Pdev, port(s) without interface" },
+    {  0, NULL }
 };
 
 static const value_string pn_io_error_code2_pnio_65[] = {
@@ -3075,11 +3083,11 @@ typedef struct pnio_ar_s {
 
     /* controller only */
     /*const char      controllername[33];*/
-    const guint8 controllermac[6];
+    guint8       controllermac[6];
     guint16      controlleralarmref;
 
     /* device only */
-    const guint8 devicemac[6];
+    guint8       devicemac[6];
     guint16      devicealarmref;
     guint16      arType;
 } pnio_ar_t;
@@ -4492,88 +4500,111 @@ packet_info *pinfo, proto_tree *tree, guint8 *drep)
     guint16 am_location_reserved2;
     guint16 am_location_reserved3;
     guint16 am_location_reserved4;
+
     sub_item = proto_tree_add_item(tree, hf_pn_io_am_location, tvb, offset, 16, ENC_NA);
     sub_tree = proto_item_add_subtree(sub_item, ett_pn_io_am_location);
-    offset = dissect_dcerpc_char(tvb, offset, pinfo, sub_tree, drep, hf_pn_io_am_location_structure,
-        &am_location_structtype);
 
+    am_location_structtype = tvb_get_guint8(tvb, offset+15);
     bit_offset = offset << 3;
+
     switch (am_location_structtype)
     {
     case (0x01):
-        /* level 0 */
-        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_0, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
-        bit_offset += 10;
-        /* level 1 */
-        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_1, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
-        bit_offset += 10;
-        /* level 2 */
-        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_2, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
-        bit_offset += 10;
-        /* level 3 */
-        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_3, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
-        bit_offset += 10;
-        /* level 4 */
-        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_4, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
-        bit_offset += 10;
-        /* level 5 */
-        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_5, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
-        bit_offset += 10;
-        /* level 6 */
-        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_6, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
-        bit_offset += 10;
-        /* level 7 */
-        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_7, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
-        bit_offset += 10;
-        /* level 8 */
-        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_8, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
-        bit_offset += 10;
-        /* level 9 */
-        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_9, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
-        bit_offset += 10;
-        /* level 10 */
-        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_10, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
-        bit_offset += 10;
+
         /* level 11 */
         proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_11, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
         bit_offset += 10;
-        offset = bit_offset >> 3;
+
+        /* level 10 */
+        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_10, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
+        bit_offset += 10;
+
+        /* level 9 */
+        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_9, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
+        bit_offset += 10;
+
+        /* level 8 */
+        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_8, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
+        bit_offset += 10;
+
+        /* level 7 */
+        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_7, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
+        bit_offset += 10;
+
+        /* level 6 */
+        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_6, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
+        bit_offset += 10;
+
+        /* level 5 */
+        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_5, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
+        bit_offset += 10;
+
+        /* level 4 */
+        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_4, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
+        bit_offset += 10;
+
+        /* level 3 */
+        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_3, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
+        bit_offset += 10;
+
+        /* level 2 */
+        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_2, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
+        bit_offset += 10;
+
+        /* level 1 */
+        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_1, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
+        bit_offset += 10;
+
+        /* level 0 */
+        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_level_0, tvb, bit_offset, 10, ENC_BIG_ENDIAN);
+        bit_offset += 10;
+
+        /* level 0 */
+        proto_tree_add_bits_item(sub_tree, hf_pn_io_am_location_structure, tvb, bit_offset, 8, ENC_BIG_ENDIAN);
+
+        offset += 16;
+
         break;
     case (0x02):
-        /* Reserved1 */
-        offset = dissect_dcerpc_uint8(tvb, offset, pinfo, sub_tree, drep,
-            hf_pn_io_am_location_reserved1, &am_location_reserved1);
-
-        /* BeginSlotNumber */
+        /* Reserved 4 */
         offset = dissect_dcerpc_uint16(tvb, offset, pinfo, sub_tree, drep,
-            hf_pn_io_slot_nr, &am_location_begin_slot_number);
-
-        /* BeginSubslotNumber */
-        offset = dissect_dcerpc_uint16(tvb, offset, pinfo, sub_tree, drep,
-            hf_pn_io_subslot_nr, &am_location_begin_subslot_number);
-
-        /* EndSlotNumber*/
-        offset = dissect_dcerpc_uint16(tvb, offset, pinfo, sub_tree, drep,
-            hf_pn_io_slot_nr, &am_location_end_slot_number);
-
-        /* EndSubSlotNumber*/
-        offset = dissect_dcerpc_uint16(tvb, offset, pinfo, sub_tree, drep,
-            hf_pn_io_subslot_nr, &am_location_end_subslot_number);
-
-        /* Reserved 2 */
-        offset = dissect_dcerpc_uint16(tvb, offset, pinfo, sub_tree, drep,
-            hf_pn_io_am_location_reserved2, &am_location_reserved2);
+            hf_pn_io_am_location_reserved4, &am_location_reserved4);
 
         /* Reserved 3 */
         offset = dissect_dcerpc_uint16(tvb, offset, pinfo, sub_tree, drep,
             hf_pn_io_am_location_reserved3, &am_location_reserved3);
 
-        /* Reserved 4 */
+        /* Reserved 2 */
         offset = dissect_dcerpc_uint16(tvb, offset, pinfo, sub_tree, drep,
-            hf_pn_io_am_location_reserved4, &am_location_reserved4);
+            hf_pn_io_am_location_reserved2, &am_location_reserved2);
+
+        /* EndSubSlotNumber*/
+        offset = dissect_dcerpc_uint16(tvb, offset, pinfo, sub_tree, drep,
+            hf_pn_io_am_location_endsubslotnum, &am_location_end_subslot_number);
+
+        /* EndSlotNumber*/
+        offset = dissect_dcerpc_uint16(tvb, offset, pinfo, sub_tree, drep,
+            hf_pn_io_am_location_endslotnum, &am_location_end_slot_number);
+
+        /* BeginSubslotNumber */
+        offset = dissect_dcerpc_uint16(tvb, offset, pinfo, sub_tree, drep,
+            hf_pn_io_am_location_beginsubslotnum, &am_location_begin_subslot_number);
+
+        /* BeginSlotNumber */
+        offset = dissect_dcerpc_uint16(tvb, offset, pinfo, sub_tree, drep,
+            hf_pn_io_am_location_beginslotnum, &am_location_begin_slot_number);
+
+        /* Reserved1 */
+        offset = dissect_dcerpc_uint8(tvb, offset, pinfo, sub_tree, drep,
+            hf_pn_io_am_location_reserved1, &am_location_reserved1);
+
+        /* Structure */
+        offset = dissect_dcerpc_uint8(tvb, offset, pinfo, sub_tree, drep,
+            hf_pn_io_am_location_structure, &am_location_structtype);
+
         break;
     default: /* will not execute because of the line preceding the switch */
-        offset += 15;
+        offset += 16;
         break;
     }
 
@@ -14955,23 +14986,43 @@ proto_register_pn_io (void)
         NULL, HFILL }
     },
     { &hf_pn_io_am_location_reserved1,
-      { "Reserved 1", "pn_io.am_location.reserved1",
+      { "AM_Location.Reserved1", "pn_io.am_location.reserved1",
         FT_UINT8, BASE_HEX, VALS(pn_io_am_location_reserved_vals), 0x0,
         NULL, HFILL }
     },
     { &hf_pn_io_am_location_reserved2,
-      { "Reserved 2", "pn_io.am_location.reserved2",
+      { "AM_Location.Reserved2", "pn_io.am_location.reserved2",
         FT_UINT16, BASE_HEX, VALS(pn_io_am_location_reserved_vals), 0x0,
         NULL, HFILL }
     },
     { &hf_pn_io_am_location_reserved3,
-      { "Reserved 3", "pn_io.am_location.reserved3",
+      { "AM_Location.Reserved3", "pn_io.am_location.reserved3",
         FT_UINT16, BASE_HEX, VALS(pn_io_am_location_reserved_vals), 0x0,
         NULL, HFILL }
     },
     { &hf_pn_io_am_location_reserved4,
-      { "Reserved 3", "pn_io.am_location.reserved4",
+      { "AM_Location.Reserved4", "pn_io.am_location.reserved4",
         FT_UINT16, BASE_HEX, VALS(pn_io_am_location_reserved_vals), 0x0,
+        NULL, HFILL }
+    },
+    { &hf_pn_io_am_location_beginslotnum,
+      { "AM_Location.BeginSlotNumber", "pn_io.slot_nr",
+        FT_UINT16, BASE_HEX, NULL, 0x0,
+        NULL, HFILL }
+    },
+    { &hf_pn_io_am_location_beginsubslotnum,
+      { "AM_Location.BeginSubSlotNumber", "pn_io.subslot_nr",
+        FT_UINT16, BASE_HEX, NULL, 0x0,
+        NULL, HFILL }
+    },
+    { &hf_pn_io_am_location_endslotnum,
+      { "AM_Location.EndSlotNumber", "pn_io.slot_nr",
+        FT_UINT16, BASE_HEX, NULL, 0x0,
+        NULL, HFILL }
+    },
+    { &hf_pn_io_am_location_endsubslotnum,
+      { "AM_Location.EndSubSlotNumber", "pn_io.subslot_nr",
+        FT_UINT16, BASE_HEX, NULL, 0x0,
         NULL, HFILL }
     },
     { &hf_pn_io_am_software_revision,

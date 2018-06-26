@@ -5,7 +5,7 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0+
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include "config.h"
 
@@ -358,16 +358,10 @@ bool ColoringRulesModel::setData(const QModelIndex &dataIndex, const QVariant &v
         return false;
     }
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
     QVector<int> roles;
     roles << role;
-#endif
 
-    emit dataChanged(topLeft, bottomRight
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-                         , roles
-#endif
-        );
+    emit dataChanged(topLeft, bottomRight, roles);
 
     return true;
 

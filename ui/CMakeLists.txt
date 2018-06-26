@@ -4,19 +4,7 @@
 # By Gerald Combs <gerald@wireshark.org>
 # Copyright 1998 Gerald Combs
 #
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+# SPDX-License-Identifier: GPL-2.0-or-later
 #
 
 set(NONGENERATED_UI_SRC
@@ -48,12 +36,14 @@ set(NONGENERATED_UI_SRC
 	recent.c
 	rtp_media.c
 	rtp_stream.c
+	rtp_stream_id.c
 	service_response_time.c
 	software_update.c
 	ssl_key_export.c
 	summary.c
 	tap_export_pdu.c
 	tap-iax2-analysis.c
+	tap-rtp-analysis.c
 	tap-rtp-common.c
 	tap-sctp-analysis.c
 	tap-rlc-graph.c
@@ -69,6 +59,7 @@ set(NONGENERATED_UI_SRC
 file(GLOB EXTRA_UI_HEADERS
 	rtp_media.h
 	rtp_stream.h
+	rtp_stream_id.h
 	tap-iax2-analysis.h
 	tap-rtp-analysis.h
 )
@@ -92,10 +83,6 @@ set_target_properties(ui PROPERTIES
 	LINK_FLAGS "${WS_LINK_FLAGS}"
 	FOLDER "UI"
 )
-
-add_executable(make-taps make-taps.c)
-# wsutil is only required for glib-compat.c
-target_link_libraries(make-taps ${GLIB2_LIBRARIES} wsutil)
 
 if (HTML_HELP_COMPILER)
 	add_definitions(-DHHC_DIR)

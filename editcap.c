@@ -382,7 +382,7 @@ set_time_adjustment(char *optarg_str_p)
             val = strtol(&(frac[1]), &end, 10);
         }
         if (*frac != '.' || end == NULL || end == frac || val < 0
-            || val > ONE_BILLION || val == LONG_MIN || val == LONG_MAX) {
+            || val >= ONE_BILLION || val == LONG_MIN || val == LONG_MAX) {
             fprintf(stderr, "editcap: \"%s\" isn't a valid time adjustment\n",
                     optarg_str_p);
             return FALSE;
@@ -456,7 +456,7 @@ set_strict_time_adj(char *optarg_str_p)
             val = strtol(&(frac[1]), &end, 10);
         }
         if (*frac != '.' || end == NULL || end == frac || val < 0
-            || val > ONE_BILLION || val == LONG_MIN || val == LONG_MAX) {
+            || val >= ONE_BILLION || val == LONG_MIN || val == LONG_MAX) {
             fprintf(stderr, "editcap: \"%s\" isn't a valid time adjustment\n",
                     optarg_str_p);
             return FALSE;
@@ -524,7 +524,7 @@ set_rel_time(char *optarg_str_p)
             val = strtol(&(frac[1]), &end, 10);
         }
         if (*frac != '.' || end == NULL || end == frac || val < 0
-            || val > ONE_BILLION || val == LONG_MIN || val == LONG_MAX) {
+            || val >= ONE_BILLION || val == LONG_MIN || val == LONG_MAX) {
             fprintf(stderr, "3: editcap: \"%s\" isn't a valid rel time value\n",
                     optarg_str_p);
             return FALSE;
@@ -1021,7 +1021,7 @@ main(int argc, char *argv[])
      * Attempt to get the pathname of the directory containing the
      * executable file.
      */
-    init_progfile_dir_error = init_progfile_dir(argv[0], main);
+    init_progfile_dir_error = init_progfile_dir(argv[0]);
     if (init_progfile_dir_error != NULL) {
         fprintf(stderr,
                 "editcap: Can't get pathname of directory containing the editcap program: %s.\n",
@@ -1308,6 +1308,7 @@ main(int argc, char *argv[])
         stoptm.tm_year = 135;
         stoptm.tm_mday = 31;
         stoptm.tm_mon = 11;
+        stoptm.tm_isdst = -1;
 
         stoptime = mktime(&stoptm);
     }
@@ -1538,7 +1539,7 @@ main(int argc, char *argv[])
                                     temp_rec = *rec;
                                     temp_rec.ts.secs = previous_time.secs + strict_time_adj.tv.secs;
                                     temp_rec.ts.nsecs = previous_time.nsecs;
-                                    if (temp_rec.ts.nsecs + strict_time_adj.tv.nsecs > ONE_BILLION) {
+                                    if (temp_rec.ts.nsecs + strict_time_adj.tv.nsecs >= ONE_BILLION) {
                                         /* carry */
                                         temp_rec.ts.secs++;
                                         temp_rec.ts.nsecs += strict_time_adj.tv.nsecs - ONE_BILLION;
@@ -1558,7 +1559,7 @@ main(int argc, char *argv[])
                                 temp_rec = *rec;
                                 temp_rec.ts.secs = previous_time.secs + strict_time_adj.tv.secs;
                                 temp_rec.ts.nsecs = previous_time.nsecs;
-                                if (temp_rec.ts.nsecs + strict_time_adj.tv.nsecs > ONE_BILLION) {
+                                if (temp_rec.ts.nsecs + strict_time_adj.tv.nsecs >= ONE_BILLION) {
                                     /* carry */
                                     temp_rec.ts.secs++;
                                     temp_rec.ts.nsecs += strict_time_adj.tv.nsecs - ONE_BILLION;
@@ -1591,7 +1592,7 @@ main(int argc, char *argv[])
                             }
                             temp_rec.ts.nsecs -= time_adj.tv.nsecs;
                         } else {                  /* add */
-                            if (temp_rec.ts.nsecs + time_adj.tv.nsecs > ONE_BILLION) {
+                            if (temp_rec.ts.nsecs + time_adj.tv.nsecs >= ONE_BILLION) {
                                 /* carry */
                                 temp_rec.ts.secs++;
                                 temp_rec.ts.nsecs += time_adj.tv.nsecs - ONE_BILLION;

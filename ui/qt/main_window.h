@@ -10,6 +10,32 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+/** @defgroup main_window_group Main window
+ * The main window has the following submodules:
+   @dot
+  digraph main_dependencies {
+      node [shape=record, fontname=Helvetica, fontsize=10];
+      main [ label="main window" URL="\ref main.h"];
+      menu [ label="menubar" URL="\ref menus.h"];
+      toolbar [ label="toolbar" URL="\ref main_toolbar.h"];
+      packet_list [ label="packet list pane" URL="\ref packet_list.h"];
+      proto_draw [ label="packet details & bytes panes" URL="\ref main_proto_draw.h"];
+      recent [ label="recent user settings" URL="\ref recent.h"];
+      main -> menu [ arrowhead="open", style="solid" ];
+      main -> toolbar [ arrowhead="open", style="solid" ];
+      main -> packet_list [ arrowhead="open", style="solid" ];
+      main -> proto_draw [ arrowhead="open", style="solid" ];
+      main -> recent [ arrowhead="open", style="solid" ];
+  }
+  @enddot
+ */
+
+/** @file
+ *  The main window
+ *  @ingroup main_window_group
+ *  @ingroup windows_group
+ */
+
 #include <stdio.h>
 
 #include <config.h>
@@ -31,6 +57,7 @@
 #include <capchild/capture_session.h>
 
 #include <QMainWindow>
+#include <QPointer>
 #include <QSplitter>
 
 #ifdef _WIN32
@@ -54,11 +81,11 @@ class CaptureInterfacesDialog;
 class FileSetDialog;
 class FilterDialog;
 class FunnelStatistics;
-class MainWelcome;
+class WelcomePage;
 class PacketList;
 class ProtoTree;
 class WirelessFrame;
-class DragDropToolBar;
+class FilterExpressionToolBar;
 
 class QAction;
 class QActionGroup;
@@ -67,9 +94,6 @@ namespace Ui {
     class MainWindow;
 }
 
-#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-Q_DECLARE_METATYPE(QToolBar *)
-#endif
 Q_DECLARE_METATYPE(ts_type)
 Q_DECLARE_METATYPE(ts_precision)
 
@@ -141,7 +165,7 @@ private:
     QSplitter master_split_;
     QSplitter extra_split_;
     QVector<unsigned> cur_layout_;
-    MainWelcome *main_welcome_;
+    WelcomePage *welcome_page_;
     DisplayFilterCombo *df_combo_box_;
     CaptureFile capture_file_;
     QFont mono_font_;
@@ -159,10 +183,10 @@ private:
     QActionGroup *time_precision_actions_;
     FunnelStatistics *funnel_statistics_;
     QList<QPair<QAction *, bool> > freeze_actions_;
-    QWidget *freeze_focus_;
+    QPointer<QWidget> freeze_focus_;
     QMap<QAction *, ts_type> td_actions;
     QMap<QAction *, ts_precision> tp_actions;
-    DragDropToolBar *filter_expression_toolbar_;
+    FilterExpressionToolBar *filter_expression_toolbar_;
     bool was_maximized_;
 
     /* the following values are maintained so that the capture file name and status
@@ -190,7 +214,7 @@ private:
     QSocketNotifier *pipe_notifier_;
 #endif
 
-#if defined(Q_OS_MAC) && QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
+#if defined(Q_OS_MAC)
     QMenu *dock_menu_;
 #endif
 
@@ -212,7 +236,9 @@ private:
     void exportSelectedPackets();
     void exportDissections(export_type_e export_type);
 
+#ifdef Q_OS_WIN
     void fileAddExtension(QString &file_name, int file_type, bool compressed);
+#endif // Q_OS_WIN
     bool testCaptureFileClose(QString before_what, FileCloseContext context = Default);
     void captureStop();
 
@@ -281,33 +307,33 @@ public slots:
     void updatePreferenceActions();
     void updateRecentActions();
 
+    void showWelcome();
+    void showCapture();
+
     void setTitlebarForCaptureFile();
     void setWSWindowTitle(QString title = QString());
 
+#ifdef HAVE_LIBPCAP
     void captureCapturePrepared(capture_session *);
     void captureCaptureUpdateStarted(capture_session *);
     void captureCaptureUpdateFinished(capture_session *);
     void captureCaptureFixedFinished(capture_session *cap_session);
     void captureCaptureFailed(capture_session *);
+#endif
 
     void captureFileOpened();
     void captureFileReadFinished();
     void captureFileClosing();
     void captureFileClosed();
 
-    void filterExpressionsChanged();
-    static gboolean filter_expression_add_action(const void *key, void *value, void *user_data);
-
     void launchRLCGraph(bool channelKnown, guint16 ueid, guint8 rlcMode,
                         guint16 channelType, guint16 channelId, guint8 direction);
 
     void on_actionViewFullScreen_triggered(bool checked);
 
-    int uatRowIndexForFilterExpression(QString label, QString expression);
-
 private slots:
 
-    void captureEventHandler(CaptureEvent * ev);
+    void captureEventHandler(CaptureEvent ev);
 
     // Manually connected slots (no "on_<object>_<signal>").
 
@@ -351,14 +377,6 @@ private slots:
     QMenu * searchSubMenu(QString objectName);
     void activatePluginIFToolbar(bool);
 
-    void filterToolbarCustomMenuHandler(const QPoint& globalPos);
-    void filterToolbarShowPreferences();
-    void filterToolbarEditFilter();
-    void filterToolbarDisableFilter();
-    void filterToolbarRemoveFilter();
-    void filterToolbarActionMoved(QAction * action, int oldPos, int newPos);
-    void filterDropped(QString description, QString filter);
-
     void startInterfaceCapture(bool valid, const QString capture_filter);
 
     void applyGlobalCommandLineOptions();
@@ -366,7 +384,9 @@ private slots:
 
     void on_actionDisplayFilterExpression_triggered();
     void on_actionNewDisplayFilterExpression_triggered();
-    void displayFilterButtonClicked();
+    void onFilterSelected(QString, bool);
+    void onFilterPreferences();
+    void onFilterEdit(int uatIndex);
 
     // Handle FilterAction signals
     void queuedFilterAction(QString filter, FilterAction::Action action, FilterAction::ActionType type);
@@ -525,7 +545,7 @@ private slots:
     void on_actionAnalyzeDecodeAs_triggered();
     void on_actionAnalyzeReloadLuaPlugins_triggered();
 
-    void openFollowStreamDialog(follow_type_t type);
+    void openFollowStreamDialog(follow_type_t type, int stream_num = -1);
     void on_actionAnalyzeFollowTCPStream_triggered();
     void on_actionAnalyzeFollowUDPStream_triggered();
     void on_actionAnalyzeFollowSSLStream_triggered();
@@ -612,7 +632,7 @@ private slots:
     void on_actionStatisticsHTTPPacketCounter_triggered();
     void on_actionStatisticsHTTPRequests_triggered();
     void on_actionStatisticsHTTPLoadDistribution_triggered();
-    void on_actionStatisticsHTTPReferers_triggered();
+    void on_actionStatisticsHTTPRequestSequences_triggered();
     void on_actionStatisticsPacketLengths_triggered();
     void statCommandIOGraph(const char *, void *);
     void on_actionStatisticsIOGraph_triggered();

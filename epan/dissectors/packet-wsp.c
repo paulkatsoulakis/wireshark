@@ -378,6 +378,9 @@ static dissector_handle_t wsp_fromudp_handle;
 /* Handle for WTP-over-UDP dissector */
 static dissector_handle_t wtp_fromudp_handle;
 
+/* Handle for coap dissector */
+static dissector_handle_t coap_handle;
+
 /* Handle for generic media dissector */
 static dissector_handle_t media_handle;
 
@@ -1115,6 +1118,7 @@ static const value_string vals_wap_application_ids[] = {
     { 0x0008, "x-wap-application:drm.ua"},
     { 0x0009, "x-wap-application:emn.ua"},
     { 0x000A, "x-wap-application:wv.ua"},
+    { 0x001A, "x-wap-application:lwm2m.dm"},
     /* Registered by 3rd parties */
     { 0x8000, "x-wap-microsoft:localcontent.ua"},
     { 0x8001, "x-wap-microsoft:IMclient.ua"},
@@ -1282,7 +1286,7 @@ static void add_headers (proto_tree *tree, tvbuff_t *tvb, int hf, packet_info *p
 
 #define get_uintvar_integer(val,tvb,start,len,ok) \
     val = tvb_get_guintvar(tvb,start,&len, pinfo, &ei_wsp_oversized_uintvar); \
-    if (len>5) ok = FALSE; else ok = TRUE;
+    if (len>5 || len==0) ok = FALSE; else ok = TRUE;
 #define get_short_integer(val,tvb,start,len,ok) \
     val = tvb_get_guint8(tvb,start); \
     if (val & 0x80) ok = TRUE; else ok=FALSE; \
@@ -4400,7 +4404,7 @@ add_headers (proto_tree *tree, tvbuff_t *tvb, int hf, packet_info *pinfo)
                 offset = WellKnownHeader[hdr_id & 0x7F](wsp_headers, tvb,
                                                         hdr_start, pinfo);
                 /* Make sure we're progressing forward */
-                if (save_offset <= offset) {
+                if (save_offset >= offset) {
                     expert_add_info(pinfo, ti, &ei_wsp_header_invalid);
                     break;
                 }
@@ -4411,7 +4415,7 @@ add_headers (proto_tree *tree, tvbuff_t *tvb, int hf, packet_info *pinfo)
                 offset = WellKnownOpenwaveHeader[hdr_id & 0x7F](wsp_headers,
                                                                 tvb, hdr_start, pinfo);
                 /* Make sure we're progressing forward */
-                if (save_offset <= offset) {
+                if (save_offset >= offset) {
                     expert_add_info(pinfo, ti, &ei_wsp_header_invalid);
                     break;
                 }
@@ -4458,11 +4462,24 @@ add_headers (proto_tree *tree, tvbuff_t *tvb, int hf, packet_info *pinfo)
 
                     }
                 } else {
+                    /* Otherwise, non-textual values are invalid; parse them
+                     * enough to get the value length. */
+                    guint32 val_len_len; /* length of length field */
+
+                    val_len = 1; /* for the first octet */
+                    if (val_id <= 0x1E) {
+                        /* value is val_id octets long */
+                        val_len += val_id;
+                    } else if (val_id == 0x1F) {
+                        /* value is a uintvar following the val_id */
+                        val_len += tvb_get_guintvar(tvb, val_start + 1, &val_len_len, pinfo, &ei_wsp_oversized_uintvar);
+                        val_len += val_len_len; /* count the length itself */
+                    }
                     proto_tree_add_expert_format(wsp_headers, pinfo, &ei_wsp_text_field_invalid, tvb, hdr_start, hdr_len,
                                          "Invalid value for the textual '%s' header (should be a textual value)",
                                          hdr_str);
                 }
-                offset = tvb_len;
+                offset = val_start + val_len;
             }
             hidden_item = proto_tree_add_string(wsp_headers, hf_hdr_name_string,
                                                 tvb, hdr_start, offset - hdr_start, hdr_str);
@@ -5018,8 +5035,19 @@ dissect_wsp_common(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                     found_match = dissector_try_string(media_type_table,
                             contentTypeStr, tmp_tvb, pinfo, tree, NULL);
                 }
-                if (! found_match) {
-                    if (! dissector_try_heuristic(heur_subdissector_list,
+                if (! found_match){
+                    /*
+                     * Try to dissect x-wap-application lwm2m.dm  data as COaP
+                     * see docs: (page 141)
+                     * http://www.openmobilealliance.org/release/LightweightM2M/V1_0_2-20180209-A/OMA-TS-LightweightM2M-V1_0_2-20180209-A.pdf
+                     * header bytes should be: 0xAF, 0x9A
+                     */
+                    if (tvb_get_guint8(tvb, headerStart + headerLength - 1) == 0xAF && /* x-wap app id */
+                        tvb_get_guint8(tvb, headerStart + headerLength) == 0x9A && /* x-wap app lwm2m.dm */
+                        tvb_reported_length(tmp_tvb) == 15  ){
+
+                        call_dissector(coap_handle, tmp_tvb, pinfo, tree);
+                    } else if (! dissector_try_heuristic(heur_subdissector_list,
                                 tmp_tvb, pinfo, tree, &hdtbl_entry, NULL)) {
 
                         pinfo->match_string = contentTypeStr;
@@ -5183,6 +5211,8 @@ add_capabilities (proto_tree *tree, packet_info *pinfo, tvbuff_t *tvb, guint8 pd
          * Get the length of the capability field
          */
         capaValueLen = tvb_get_guintvar(tvb, offset, &len, pinfo, &ei_wsp_oversized_uintvar);
+        if (len == 0)
+            return;
         capaLen = capaValueLen + len;
 
         cap_subtree = proto_tree_add_subtree(wsp_capabilities, tvb, offset, capaLen, ett_capabilities_entry, &cap_item, "Capability");
@@ -5582,12 +5612,12 @@ static stat_tap_table_item wsp_stat_fields[] = {
 static int unknown_pt_idx;
 static int unknown_sc_idx;
 
-static void wsp_stat_init(stat_tap_table_ui* new_stat, stat_tap_gui_init_cb gui_callback, void* gui_data)
+static void wsp_stat_init(stat_tap_table_ui* new_stat)
 {
 	int num_fields = sizeof(wsp_stat_fields)/sizeof(stat_tap_table_item);
-	stat_tap_table* pt_table = stat_tap_init_table("PDU Types", num_fields, 0, NULL, gui_callback, gui_data);
+	stat_tap_table* pt_table = stat_tap_init_table("PDU Types", num_fields, 0, NULL);
 	stat_tap_table_item_type pt_items[sizeof(wsp_stat_fields)/sizeof(stat_tap_table_item)];
-	stat_tap_table* sc_table = stat_tap_init_table("Status Codes", num_fields, 0, NULL, gui_callback, gui_data);
+	stat_tap_table* sc_table = stat_tap_init_table("Status Codes", num_fields, 0, NULL);
 	stat_tap_table_item_type sc_items[sizeof(wsp_stat_fields)/sizeof(stat_tap_table_item)];
 	int table_idx;
 
@@ -7195,6 +7225,7 @@ proto_reg_handoff_wsp(void)
      */
     wtp_fromudp_handle = find_dissector_add_dependency("wtp-udp", proto_wsp);
     media_handle = find_dissector_add_dependency("media", proto_wsp);
+    coap_handle = find_dissector_add_dependency("coap", proto_wsp);
     wbxml_uaprof_handle = find_dissector_add_dependency("wbxml-uaprof", proto_wsp);
 
     /* Only connection-less WSP has no previous handler */

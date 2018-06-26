@@ -280,6 +280,8 @@ extern "C" {
 #define WTAP_ENCAP_JUNIPER_ST                   197
 #define WTAP_ENCAP_ETHERNET_MPACKET             198
 #define WTAP_ENCAP_DOCSIS31_XRA31               199
+#define WTAP_ENCAP_DPAUXMON                     200
+#define WTAP_ENCAP_RUBY_MARSHAL                 201
 
 /* After adding new item here, please also add new item to encap_table_base array */
 
@@ -371,6 +373,9 @@ extern "C" {
 #define WTAP_FILE_TYPE_SUBTYPE_NETSCALER_3_5                 78
 #define WTAP_FILE_TYPE_SUBTYPE_NETTRACE_3GPP_32_423          79
 #define WTAP_FILE_TYPE_SUBTYPE_MPLOG                         80
+#define WTAP_FILE_TYPE_SUBTYPE_DPA400                        81
+#define WTAP_FILE_TYPE_SUBTYPE_PEM                           82
+#define WTAP_FILE_TYPE_SUBTYPE_RUBY_MARSHAL                  83
 
 #define WTAP_NUM_FILE_TYPES_SUBTYPES  wtap_get_num_file_types_subtypes()
 
@@ -1142,10 +1147,9 @@ struct logcat_phdr {
 /* Packet "pseudo-header" information for header data from NetMon files. */
 
 struct netmon_phdr {
-    guint32 titleLength;    /* Number of bytes in the comment title */
-    guint8* title;          /* Comment title */
+    guint8* title;          /* Comment title, as a null-terminated UTF-8 string */
     guint32 descLength;     /* Number of bytes in the comment description */
-    guint8* description;    /* Comment description */
+    guint8* description;    /* Comment description, in ASCII RTF */
     guint sub_encap;        /* "Real" encap value for the record that will be used once pseudo header data is display */
     union sub_wtap_pseudo_header {
         struct eth_phdr     eth;

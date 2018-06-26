@@ -25,12 +25,12 @@
 #include <QTimer>
 #include <QTranslator>
 
+#include "capture_event.h"
+
 struct _e_prefs;
 
 class QAction;
 class QSocketNotifier;
-
-class CaptureEvent;
 
 // Recent items:
 // - Read from prefs
@@ -137,7 +137,7 @@ private:
     QFont mono_font_;
     QFont zoomed_font_;
     QTimer recent_timer_;
-    QTimer addr_resolv_timer_;
+    QTimer packet_data_timer_;
     QTimer tap_update_timer_;
     QList<QString> pending_open_files_;
     QSocketNotifier *if_notifier_;
@@ -179,6 +179,7 @@ signals:
     void packetDissectionChanged();
     void preferencesChanged();
     void addressResolutionChanged();
+    void columnDataChanged();
     void checkDisplayFilter();
     void fieldsChanged();
     void reloadLuaPlugins();
@@ -201,7 +202,7 @@ public slots:
     void clearRecentCaptures();
     void refreshRecentCaptures();
 
-    void captureEventHandler(CaptureEvent *);
+    void captureEventHandler(CaptureEvent);
 
 private slots:
     void updateTaps();
@@ -209,7 +210,7 @@ private slots:
     void cleanup();
     void ifChangeEventsAvailable();
     void itemStatusFinished(const QString filename = "", qint64 size = 0, bool accessible = false);
-    void refreshAddressResolution();
+    void refreshPacketData();
 };
 
 extern WiresharkApplication *wsApp;

@@ -1467,7 +1467,7 @@ static icmp_transaction_t *transaction_start(packet_info *pinfo, proto_tree *tre
                 icmpv6_trans->resp_frame);
             PROTO_ITEM_SET_GENERATED(it);
         }
-        col_append_fstr(pinfo->cinfo, COL_INFO, " (reply in %d)", icmpv6_trans->resp_frame);
+        col_append_frame_number(pinfo, COL_INFO, " (reply in %d)", icmpv6_trans->resp_frame);
     }
 
     return icmpv6_trans;
@@ -1560,7 +1560,7 @@ static icmp_transaction_t *transaction_end(packet_info *pinfo, proto_tree *tree,
         PROTO_ITEM_SET_GENERATED(it);
     }
 
-    col_append_fstr(pinfo->cinfo, COL_INFO, " (request in %d)",
+    col_append_frame_number(pinfo, COL_INFO, " (request in %d)",
         icmpv6_trans->rqst_frame);
 
     return icmpv6_trans;
@@ -3616,11 +3616,11 @@ dissect_rrenum(tvbuff_t *tvb, int rr_offset, packet_info *pinfo _U_, proto_tree 
             rr_offset += 1;
 
             /* FlagMask */
-            proto_tree_add_bitmask(tree, tvb, rr_offset, hf_icmpv6_rr_pco_up_flagmask, ett_icmpv6_rr_up_flag_mask, mask_flags, ENC_BIG_ENDIAN);
+            proto_tree_add_bitmask(up_tree, tvb, rr_offset, hf_icmpv6_rr_pco_up_flagmask, ett_icmpv6_rr_up_flag_mask, mask_flags, ENC_BIG_ENDIAN);
             rr_offset += 1;
 
             /* RaFlags */
-            proto_tree_add_bitmask(tree, tvb, rr_offset, hf_icmpv6_rr_pco_up_raflags, ett_icmpv6_rr_up_flag_ra, ra_flags, ENC_BIG_ENDIAN);
+            proto_tree_add_bitmask(up_tree, tvb, rr_offset, hf_icmpv6_rr_pco_up_raflags, ett_icmpv6_rr_up_flag_ra, ra_flags, ENC_BIG_ENDIAN);
             rr_offset += 1;
 
             /* Valid Lifetime */
@@ -3631,17 +3631,16 @@ dissect_rrenum(tvbuff_t *tvb, int rr_offset, packet_info *pinfo _U_, proto_tree 
             proto_tree_add_item(up_tree, hf_icmpv6_rr_pco_up_preferredlifetime, tvb, rr_offset, 4, ENC_BIG_ENDIAN);
             rr_offset += 4;
 
-
             /* Flags */
-            proto_tree_add_bitmask(tree, tvb, rr_offset, hf_icmpv6_rr_pco_up_flag, ett_icmpv6_rr_up_flag, up_flags, ENC_BIG_ENDIAN);
+            proto_tree_add_bitmask(up_tree, tvb, rr_offset, hf_icmpv6_rr_pco_up_flag, ett_icmpv6_rr_up_flag, up_flags, ENC_BIG_ENDIAN);
             rr_offset += 4;
 
             /* UsePrefix */
             proto_tree_add_item(up_tree, hf_icmpv6_rr_pco_up_useprefix, tvb, rr_offset, 16, ENC_NA);
-            rr_offset += 16;
 
             /* Add Info (Prefix, Length...) to Use Prefix Part label */
             proto_item_append_text(ti_up, ": %s/%u (keep %u)", tvb_ip6_to_str(tvb, rr_offset), uselen, keeplen);
+            rr_offset += 16;
         }
 
     }else if(icmp6_code == ICMP6_ROUTER_RENUMBERING_RESULT){
@@ -3660,7 +3659,7 @@ dissect_rrenum(tvbuff_t *tvb, int rr_offset, packet_info *pinfo _U_, proto_tree 
         rm_tree = proto_item_add_subtree(ti_rm, ett_icmpv6_rr_rm);
 
         /* Flags */
-        proto_tree_add_bitmask(tree, tvb, rr_offset, hf_icmpv6_rr_rm_flag, ett_icmpv6_rr_rm_flag, rm_flags, ENC_BIG_ENDIAN);
+        proto_tree_add_bitmask(rm_tree, tvb, rr_offset, hf_icmpv6_rr_rm_flag, ett_icmpv6_rr_rm_flag, rm_flags, ENC_BIG_ENDIAN);
         rr_offset +=2;
 
         /* Ordinal */

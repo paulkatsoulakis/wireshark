@@ -4,19 +4,7 @@
 # By Gerald Combs <gerald@wireshark.org>
 # Copyright 1998 Gerald Combs
 #
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+# SPDX-License-Identifier: GPL-2.0-or-later
 #
 
 ADD_CUSTOM_CMAKE_INCLUDE()
@@ -106,7 +94,9 @@ set(CLEAN_ASN1_DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-dsp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-ecp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-ess.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-f1ap.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-ftam.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-glow.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-goose.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-gsm_map.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-HI2Operations.c
@@ -141,6 +131,7 @@ set(CLEAN_ASN1_DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-mpeg-pes.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-mudurl.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-nbap.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-ngap.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-novell_pkis.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-nr-rrc.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-ns_cert_exts.c
@@ -226,7 +217,7 @@ set_target_properties(dissectors-corba PROPERTIES
 	COMPILE_DEFINITIONS "WS_BUILD_DLL"
 )
 
-if(WIN32 AND "${CMAKE_GENERATOR}" STREQUAL "Visual Studio 12 2013 Win64")
+if(WIN32 AND CMAKE_GENERATOR STREQUAL "Visual Studio 12 2013 Win64")
 	# CORBA IDL dissectors are triggering a MSVC 2013 x64 /O2 bug leading to a NULL pointer dereference (see bug 12495)
 	target_compile_options(dissectors-corba PRIVATE $<$<CONFIG:Release>:/Ox> $<$<CONFIG:RelWithDebInfo>:/Ox>)
 endif()
@@ -239,6 +230,7 @@ source_group(dissectors-ncp2222 FILES ${NCP2222_DISSECTOR_SRC})
 
 set(DISSECTOR_PUBLIC_HEADERS
 	dissectors.h
+	file-rbm.h
 	packet-6lowpan.h
 	packet-a21.h
 	packet-acp133.h
@@ -334,6 +326,7 @@ set(DISSECTOR_PUBLIC_HEADERS
 	packet-epmd.h
 	packet-ess.h
 	packet-eth.h
+	packet-f5ethtrailer.h
 	packet-fc.h
 	packet-fcbls.h
 	packet-fcct.h
@@ -448,6 +441,7 @@ set(DISSECTOR_PUBLIC_HEADERS
 	packet-netbios.h
 	packet-netlink.h
 	packet-nfs.h
+	packet-ngap.h
 	packet-nisplus.h
 	packet-nlm.h
 	packet-nr-rrc.h
@@ -457,6 +451,7 @@ set(DISSECTOR_PUBLIC_HEADERS
 	packet-nvme.h
 	packet-ocsp.h
 	packet-opensafety.h
+	packet-oscore.h
 	packet-osi.h
 	packet-osi-options.h
 	packet-p1.h
@@ -466,6 +461,7 @@ set(DISSECTOR_PUBLIC_HEADERS
 	packet-pcap_pktdata.h
 	packet-pcnfsd.h
 	packet-pdcp-lte.h
+	packet-pdcp-nr.h
 	packet-per.h
 	packet-pkcs1.h
 	packet-pkcs12.h
@@ -496,11 +492,13 @@ set(DISSECTOR_PUBLIC_HEADERS
 	packet-rdt.h
 	packet-reload.h
 	packet-rlc-lte.h
+	packet-rlc-nr.h
 	packet-rmi.h
 	packet-rmt-common.h
 	packet-rohc.h
 	packet-ros.h
 	packet-rpc.h
+	packet-rpcrdma.h
 	packet-rquota.h
 	packet-rrc.h
 	packet-rsvp.h
@@ -584,6 +582,7 @@ set(DISSECTOR_PUBLIC_HEADERS
 	packet-wtp.h
 	packet-x11.h
 	packet-x11-keysymdef.h
+	packet-x2ap.h
 	packet-x509af.h
 	packet-x509ce.h
 	packet-x509if.h
@@ -619,6 +618,7 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/file-pcap.c
 	${CMAKE_CURRENT_SOURCE_DIR}/file-pcapng.c
 	${CMAKE_CURRENT_SOURCE_DIR}/file-png.c
+	${CMAKE_CURRENT_SOURCE_DIR}/file-rbm.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-2dparityfec.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-3com-njack.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-3com-xns.c
@@ -682,6 +682,7 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-atm.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-atmtcp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-auto_rp.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-avsp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-ax25.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-ax25-kiss.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-ax25-nol3.c
@@ -900,11 +901,15 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-docsis-tlv.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-docsis-vendor.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-dof.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-doip.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-dpaux.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-dpauxmon.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-dplay.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-dpnet.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-dpnss-link.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-dpnss.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-drda.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-drb.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-dsi.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-dsr.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-dtcp-ip.c
@@ -963,9 +968,11 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-etsi_card_app_toolkit.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-etv.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-evrc.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-exablaze.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-exec.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-exported_pdu.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-extreme.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-f5ethtrailer.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-fc00.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-fc.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-fcct.c
@@ -1050,8 +1057,10 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-gsm_bsslap.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-gsm_bssmap_le.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-gsm_cbch.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-gsm_gsup.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-gsm_ipa.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-gsm_osmux.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-gsm_r_uus1.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-gsm_rlcmac.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-gsm_sim.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-gsm_sms.c
@@ -1289,6 +1298,7 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-maap.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-mac-lte-framed.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-mac-lte.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-mac-nr.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-maccontrol.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-macsec.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-mactelnet.c
@@ -1364,6 +1374,8 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-multipart.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-mux27010.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-mysql.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-nano.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-nas_5gs.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-nas_eps.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-nasdaq-itch.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-nasdaq-soup.c
@@ -1452,6 +1464,7 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-opsi.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-optommp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-osc.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-oscore.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-osi-options.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-osi.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-ositp.c
@@ -1473,6 +1486,7 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-pcp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-pdc.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-pdcp-lte.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-pdcp-nr.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-peekremote.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-per.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-pfcp.c
@@ -1499,6 +1513,7 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-pppoe.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-pptp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-protobuf.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-proxy.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-prp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-ptp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-ptpip.c
@@ -1546,6 +1561,7 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-rip.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-ripng.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-rlc-lte.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-rlc-nr.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-rlm.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-rlogin.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-rmcp.c
@@ -1586,6 +1602,7 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-rudp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-rwall.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-rx.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-s101.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-s5066sis.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-s5066dts.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-s7comm.c
@@ -1670,6 +1687,7 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-starteam.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-stat-notify.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-stat.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-stcsig.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-steam-ihs-discovery.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-stt.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-stun.c
@@ -1711,6 +1729,7 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-tnef.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-tns.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-tpkt.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-tpm20.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-tpncp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-tr.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-trill.c
@@ -1881,14 +1900,6 @@ set(ALL_DISSECTOR_SRC
 	${CORBA_IDL_DISSECTOR_SRC}
 )
 
-add_executable(make-dissectors make-dissectors.c)
-# wsutil is only required for glib-compat.c
-target_link_libraries(make-dissectors ${GLIB2_LIBRARIES} wsutil)
-
-if(WIN32)
-	add_dependencies(make-dissectors copy_cli_dlls)
-endif()
-
 #
 # We pass the arguments to make-dissectors in a file to avoid limitations
 # with the number of arguments handled by main().
@@ -1899,8 +1910,8 @@ file(GENERATE
 )
 add_custom_command(
 	OUTPUT dissectors.c
-	COMMAND make-dissectors dissectors.c @dissectors.in.txt
-	DEPENDS make-dissectors ${ALL_DISSECTOR_SRC}
+	COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make-regs.py dissectors dissectors.c @dissectors.in.txt
+	DEPENDS ${CMAKE_SOURCE_DIR}/tools/make-regs.py ${ALL_DISSECTOR_SRC}
 		"${CMAKE_CURRENT_BINARY_DIR}/dissectors.in.txt"
 	COMMENT "Making dissectors.c"
 )

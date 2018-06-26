@@ -28,12 +28,10 @@
 #include "ui/simple_dialog.h"
 
 #include <wsutil/file_util.h>
-#include <wsutil/glib-compat.h>
 
 #define RECENT_KEY_MAIN_TOOLBAR_SHOW          "gui.toolbar_main_show"
 #define RECENT_KEY_FILTER_TOOLBAR_SHOW        "gui.filter_toolbar_show"
 #define RECENT_KEY_WIRELESS_TOOLBAR_SHOW      "gui.wireless_toolbar_show"
-#define RECENT_KEY_DRIVER_CHECK_SHOW          "gui.airpcap_driver_check_show"
 #define RECENT_KEY_PACKET_LIST_SHOW           "gui.packet_list_show"
 #define RECENT_KEY_TREE_VIEW_SHOW             "gui.tree_view_show"
 #define RECENT_KEY_BYTE_VIEW_SHOW             "gui.byte_view_show"
@@ -47,8 +45,6 @@
 #define RECENT_GUI_BYTES_ENCODING             "gui.bytes_encoding"
 #define RECENT_GUI_GEOMETRY_MAIN_X            "gui.geometry_main_x"
 #define RECENT_GUI_GEOMETRY_MAIN_Y            "gui.geometry_main_y"
-#define RECENT_GUI_GTK_GEOMETRY_MAIN_X        "gui.gtk.geometry_main_x"
-#define RECENT_GUI_GTK_GEOMETRY_MAIN_Y        "gui.gtk.geometry_main_y"
 #define RECENT_GUI_GEOMETRY_MAIN_WIDTH        "gui.geometry_main_width"
 #define RECENT_GUI_GEOMETRY_MAIN_HEIGHT       "gui.geometry_main_height"
 #define RECENT_GUI_GEOMETRY_MAIN_MAXIMIZED    "gui.geometry_main_maximized"
@@ -252,9 +248,6 @@ window_geom_recent_read_pair(const char *name,
         geom.set_size   = FALSE;
         geom.width      = -1;
         geom.height     = -1;
-
-        geom.set_maximized = FALSE;/* this is valid in GTK2 only */
-        geom.maximized  = FALSE;   /* this is valid in GTK2 only */
     }
 
     if (strcmp(key, "x") == 0) {
@@ -681,8 +674,6 @@ write_recent(void)
     fprintf(rf, "# Decimal numbers.\n");
     fprintf(rf, RECENT_GUI_GEOMETRY_MAIN_X ": %d\n", recent.gui_geometry_main_x);
     fprintf(rf, RECENT_GUI_GEOMETRY_MAIN_Y ": %d\n", recent.gui_geometry_main_y);
-    fprintf(rf, RECENT_GUI_GTK_GEOMETRY_MAIN_X ": %d\n", recent.gui_gtk_geometry_main_x);
-    fprintf(rf, RECENT_GUI_GTK_GEOMETRY_MAIN_Y ": %d\n", recent.gui_gtk_geometry_main_y);
     fprintf(rf, RECENT_GUI_GEOMETRY_MAIN_WIDTH ": %d\n",
             recent.gui_geometry_main_width);
     fprintf(rf, RECENT_GUI_GEOMETRY_MAIN_HEIGHT ": %d\n",
@@ -794,12 +785,6 @@ write_profile_recent(void)
     write_recent_boolean(rf, "Wireless Settings Toolbar show (hide)",
             RECENT_KEY_WIRELESS_TOOLBAR_SHOW,
             recent.wireless_toolbar_show);
-
-#ifdef HAVE_AIRPCAP
-    write_recent_boolean(rf, "Show (hide) old AirPcap driver warning dialog box",
-            RECENT_KEY_DRIVER_CHECK_SHOW,
-            recent.airpcap_driver_check_show);
-#endif
 
     write_recent_boolean(rf, "Packet list show (hide)",
             RECENT_KEY_PACKET_LIST_SHOW,
@@ -926,16 +911,6 @@ read_set_recent_common_pair_static(gchar *key, const gchar *value,
         if (p == value || *p != '\0')
             return PREFS_SET_SYNTAX_ERR;      /* number was bad */
         recent.gui_geometry_main_y = (gint)num;
-    } else if (strcmp(key, RECENT_GUI_GTK_GEOMETRY_MAIN_X) == 0) {
-        num = strtol(value, &p, 0);
-        if (p == value || *p != '\0')
-            return PREFS_SET_SYNTAX_ERR;      /* number was bad */
-        recent.gui_gtk_geometry_main_x = (gint)num;
-    } else if (strcmp(key, RECENT_GUI_GTK_GEOMETRY_MAIN_Y) == 0) {
-        num = strtol(value, &p, 0);
-        if (p == value || *p != '\0')
-            return PREFS_SET_SYNTAX_ERR;      /* number was bad */
-        recent.gui_gtk_geometry_main_y = (gint)num;
     } else if (strcmp(key, RECENT_GUI_GEOMETRY_MAIN_WIDTH) == 0) {
         num = strtol(value, &p, 0);
         if (p == value || *p != '\0')
@@ -1017,8 +992,6 @@ read_set_recent_pair_static(gchar *key, const gchar *value,
         /* check both the old and the new keyword */
     } else if (strcmp(key, RECENT_KEY_WIRELESS_TOOLBAR_SHOW) == 0 || (strcmp(key, "gui.airpcap_toolbar_show") == 0)) {
         parse_recent_boolean(value, &recent.wireless_toolbar_show);
-    } else if (strcmp(key, RECENT_KEY_DRIVER_CHECK_SHOW) == 0) {
-        parse_recent_boolean(value, &recent.airpcap_driver_check_show);
     } else if (strcmp(key, RECENT_KEY_PACKET_LIST_SHOW) == 0) {
         parse_recent_boolean(value, &recent.packet_list_show);
     } else if (strcmp(key, RECENT_KEY_TREE_VIEW_SHOW) == 0) {
@@ -1238,8 +1211,6 @@ recent_read_static(char **rf_path_return, int *rf_errno_return)
     /* set defaults */
     recent.gui_geometry_main_x        =        20;
     recent.gui_geometry_main_y        =        20;
-    recent.gui_gtk_geometry_main_x    =        20;
-    recent.gui_gtk_geometry_main_y    =        20;
     recent.gui_geometry_main_width    = DEF_WIDTH;
     recent.gui_geometry_main_height   = DEF_HEIGHT;
     recent.gui_geometry_main_maximized=     FALSE;
@@ -1291,7 +1262,6 @@ recent_read_profile_static(char **rf_path_return, int *rf_errno_return)
     recent.main_toolbar_show         = TRUE;
     recent.filter_toolbar_show       = TRUE;
     recent.wireless_toolbar_show     = FALSE;
-    recent.airpcap_driver_check_show = TRUE;
     recent.packet_list_show          = TRUE;
     recent.tree_view_show            = TRUE;
     recent.byte_view_show            = TRUE;

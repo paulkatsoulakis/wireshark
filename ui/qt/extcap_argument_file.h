@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef UI_QT_EXTCAP_ARGUMENT_FILE_H_
 #define UI_QT_EXTCAP_ARGUMENT_FILE_H_
@@ -21,7 +22,7 @@ class ExtcapArgumentFileSelection : public ExtcapArgument
     Q_OBJECT
 
 public:
-    ExtcapArgumentFileSelection(extcap_arg * argument);
+    ExtcapArgumentFileSelection(extcap_arg * argument, QObject * parent = Q_NULLPTR);
     virtual ~ExtcapArgumentFileSelection();
 
     virtual QWidget * createEditor(QWidget * parent);

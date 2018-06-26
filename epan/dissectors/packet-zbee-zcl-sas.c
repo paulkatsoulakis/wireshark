@@ -158,7 +158,7 @@ dissect_zbee_zcl_ias_ace(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
             zcl->tran_seqno);
 
         /* Add the command ID. */
-        proto_tree_add_item(tree, hf_zbee_zcl_ias_ace_srv_rx_cmd_id, tvb, offset, 1, cmd_id);
+        proto_tree_add_item(tree, hf_zbee_zcl_ias_ace_srv_rx_cmd_id, tvb, offset, 1, ENC_LITTLE_ENDIAN);
 
         /* Check if this command has a payload, then add the payload tree */
         rem_len = tvb_reported_length_remaining(tvb, ++offset);
@@ -193,7 +193,7 @@ dissect_zbee_zcl_ias_ace(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
             zcl->tran_seqno);
 
         /* Add the command ID. */
-        proto_tree_add_item(tree, hf_zbee_zcl_ias_ace_srv_tx_cmd_id, tvb, offset, 1, cmd_id);
+        proto_tree_add_item(tree, hf_zbee_zcl_ias_ace_srv_tx_cmd_id, tvb, offset, 1, ENC_LITTLE_ENDIAN);
 
         /* Check if this command has a payload, then add the payload tree */
         rem_len = tvb_reported_length_remaining(tvb, ++offset);
@@ -427,16 +427,12 @@ proto_register_zbee_zcl_ias_ace(void)
 void
 proto_reg_handoff_zbee_zcl_ias_ace(void)
 {
-    dissector_handle_t ias_ace_handle;
-
-    /* Register our dissector with the ZigBee application dissectors. */
-    ias_ace_handle = find_dissector(ZBEE_PROTOABBREV_ZCL_IAS_ACE);
-    dissector_add_uint("zbee.zcl.cluster", ZBEE_ZCL_CID_IAS_ACE, ias_ace_handle);
-
-    zbee_zcl_init_cluster(  proto_zbee_zcl_ias_ace,
+    zbee_zcl_init_cluster(  ZBEE_PROTOABBREV_ZCL_IAS_ACE,
+                            proto_zbee_zcl_ias_ace,
                             ett_zbee_zcl_ias_ace,
                             ZBEE_ZCL_CID_IAS_ACE,
-                            -1,
+                            ZBEE_MFG_CODE_NONE,
+                            -1, -1,
                             hf_zbee_zcl_ias_ace_srv_rx_cmd_id,
                             hf_zbee_zcl_ias_ace_srv_tx_cmd_id,
                             NULL
@@ -473,7 +469,7 @@ void proto_register_zbee_zcl_ias_wd(void);
 void proto_reg_handoff_zbee_zcl_ias_wd(void);
 
 /* Command Dissector Helpers */
-static void dissect_zcl_ias_wd_attr_data                (proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type);
+static void dissect_zcl_ias_wd_attr_data                (proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type, gboolean client_attr);
 static void dissect_zcl_ias_wd_start_warning            (tvbuff_t *tvb, proto_tree *tree, guint *offset);
 static void dissect_zcl_ias_wd_squawk                   (tvbuff_t *tvb, proto_tree *tree, guint *offset);
 
@@ -583,7 +579,7 @@ dissect_zbee_zcl_ias_wd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
             zcl->tran_seqno);
 
         /* Add the command ID. */
-        proto_tree_add_item(tree, hf_zbee_zcl_ias_wd_srv_rx_cmd_id, tvb, offset, 1, cmd_id);
+        proto_tree_add_item(tree, hf_zbee_zcl_ias_wd_srv_rx_cmd_id, tvb, offset, 1, ENC_LITTLE_ENDIAN);
 
         /* Check if this command has a payload, then add the payload tree */
         rem_len = tvb_reported_length_remaining(tvb, ++offset);
@@ -666,15 +662,16 @@ dissect_zcl_ias_wd_squawk(tvbuff_t *tvb, proto_tree *tree, guint *offset)
  *@param offset pointer to buffer offset
  *@param attr_id attribute identifier
  *@param data_type attribute data type
+ *@param client_attr ZCL client
 */
 void
-dissect_zcl_ias_wd_attr_data(proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type)
+dissect_zcl_ias_wd_attr_data(proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type, gboolean client_attr)
 {
     /* Dissect attribute data type and data */
     switch (attr_id) {
         case ZBEE_ZCL_ATTR_ID_IAS_WD_MAX_DURATION:
         default:
-            dissect_zcl_attr_data(tvb, tree, offset, data_type);
+            dissect_zcl_attr_data(tvb, tree, offset, data_type, client_attr);
             break;
     }
 
@@ -746,15 +743,12 @@ proto_register_zbee_zcl_ias_wd(void)
 void
 proto_reg_handoff_zbee_zcl_ias_wd(void)
 {
-    dissector_handle_t ias_wd_handle;
-
-    /* Register our dissector with the ZigBee application dissectors. */
-    ias_wd_handle = find_dissector(ZBEE_PROTOABBREV_ZCL_IAS_WD);
-    dissector_add_uint("zbee.zcl.cluster", ZBEE_ZCL_CID_IAS_WD, ias_wd_handle);
-
-    zbee_zcl_init_cluster(  proto_zbee_zcl_ias_wd,
+    zbee_zcl_init_cluster(  ZBEE_PROTOABBREV_ZCL_IAS_WD,
+                            proto_zbee_zcl_ias_wd,
                             ett_zbee_zcl_ias_wd,
                             ZBEE_ZCL_CID_IAS_WD,
+                            ZBEE_MFG_CODE_NONE,
+                            hf_zbee_zcl_ias_wd_attr_id,
                             hf_zbee_zcl_ias_wd_attr_id,
                             hf_zbee_zcl_ias_wd_srv_rx_cmd_id,
                             -1,

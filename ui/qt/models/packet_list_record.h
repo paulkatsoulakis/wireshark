@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef PACKET_LIST_RECORD_H
 #define PACKET_LIST_RECORD_H
@@ -45,6 +46,7 @@ public:
     struct conversation *conversation() { return conv_; }
 
     int columnTextSize(const char *str);
+    static void invalidateAllRecords() { col_data_ver_++; }
     static void resetColumns(column_info *cinfo);
     void resetColorized();
     inline int lineCount() { return lines_; }

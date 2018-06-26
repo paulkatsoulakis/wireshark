@@ -58,19 +58,7 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 2001 Gerald Combs
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
 #include <stdlib.h>
@@ -123,15 +111,30 @@ static void mark_lval_deprecated(const char *s);
 
 %%
 
-[[:blank:]\n]+	/* ignore whitespace */
+[[:blank:]\n]+		{
+	/* Ignore whitespace, unless set elements are being parsed. Perhaps it
+	 * should have used commas from the beginning, but now we are stuck with
+	 * whitespace as separators. */
+	if (yyextra->in_set) {
+		return simple(TOKEN_WHITESPACE);
+	}
+}
 
 
 
 "("				return simple(TOKEN_LPAREN);
 ")"				return simple(TOKEN_RPAREN);
 ","				return simple(TOKEN_COMMA);
-"{"				return simple(TOKEN_LBRACE);
-"}"				return simple(TOKEN_RBRACE);
+
+"{"[[:blank:]\n]*	{
+	yyextra->in_set = TRUE;
+	return simple(TOKEN_LBRACE);
+}
+[[:blank:]\n]*".."[[:blank:]\n]*	return simple(TOKEN_DOTDOT);
+[[:blank:]\n]*"}"	{
+	yyextra->in_set = FALSE;
+	return simple(TOKEN_RBRACE);
+}
 
 "=="			return simple(TOKEN_TEST_EQ);
 "eq"			return simple(TOKEN_TEST_EQ);
@@ -350,10 +353,17 @@ static void mark_lval_deprecated(const char *s);
         return set_lval(TOKEN_UNPARSED, yytext);
 }
 
-[-\+[:alnum:]_.:]+	{
-	/* Is it a field name? */
+		([.][-+[:alnum:]_:]+)+[.]{0,2} |
+[-+[:alnum:]_:]+([.][-+[:alnum:]_:]+)*[.]{0,2} {
+	/* Is it a field name or some other value (float, integer, bytes, ...)? */
 	header_field_info *hfinfo;
 	df_func_def_t *df_func_def;
+
+	/* Trailing dot is allowed for floats, but make sure that trailing ".."
+	 * is interpreted as a token on its own. */
+	if (strstr(yytext, "..")) {
+		yyless(yyleng-2);
+	}
 
 	hfinfo = proto_registrar_get_byname(yytext);
 	if (hfinfo) {
@@ -399,7 +409,9 @@ simple(int token)
 		case TOKEN_RBRACE:
 		case TOKEN_COLON:
 		case TOKEN_COMMA:
+		case TOKEN_DOTDOT:
 		case TOKEN_HYPHEN:
+		case TOKEN_WHITESPACE:
 		case TOKEN_TEST_EQ:
 		case TOKEN_TEST_NE:
 		case TOKEN_TEST_GT:

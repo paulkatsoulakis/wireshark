@@ -1255,7 +1255,7 @@ const value_string isup_parameter_type_value[] = {
 /* 142 */  { 142,                                  "Forward CAT indicators"},   /* Q.763 Amendment 6(10/2009) */
 /* 143 */  { 143,                                  "Backward CAT indicators"},  /* Q.763 Amendment 6(10/2009) */
 /* 150 */  { 150,                                  "Automatic re-routing" },    /* Q.763 Amendment 3(04/2004) */
-/* 166 */  { 168,                                  "IEPS call information" },   /* Q.763 Amendment 4(01/2006) */
+/* 166 */  { 166,                                  "IEPS call information" },   /* Q.763 Amendment 4(01/2006) */
 /* 168 */  { 168,                                  "VED information" },         /* Q.763 Amendment 5(09/2006) */
 /* 192 */  { PARAM_TYPE_GENERIC_NR,                "Generic number"},
 /* 193 */  { PARAM_TYPE_GENERIC_DIGITS,            "Generic digits (national use)"},
@@ -3147,6 +3147,7 @@ static expert_field ei_isup_message_type_no_optional_parameters = EI_INIT;
 static expert_field ei_isup_status_subfield_not_present = EI_INIT;
 static expert_field ei_isup_empty_number = EI_INIT;
 static expert_field ei_isup_too_many_digits = EI_INIT;
+static expert_field ei_isup_opt_par_lengt_err = EI_INIT;
 
 static dissector_handle_t bicc_handle;
 
@@ -6588,7 +6589,7 @@ dissect_isup_generic_name_parameter(tvbuff_t *parameter_tvb, proto_tree *paramet
 /* ------------------------------------------------------------------
  Dissector Parameter Generic digits
  */
-static void
+void
 dissect_isup_generic_digits_parameter(tvbuff_t *parameter_tvb, proto_tree *parameter_tree, proto_item *parameter_item _U_)
 { guint length = tvb_reported_length(parameter_tvb);
   proto_tree_add_item(parameter_tree, hf_isup_generic_digits, parameter_tvb, 0, length, ENC_NA);
@@ -7831,6 +7832,13 @@ dissect_isup_optional_parameter(tvbuff_t *optional_parameters_tvb, packet_info *
 
     if (parameter_type != PARAM_TYPE_END_OF_OPT_PARAMS) {
       parameter_length = tvb_get_guint8(optional_parameters_tvb, offset + PARAMETER_TYPE_LENGTH);
+      if (parameter_length + PARAMETER_TYPE_LENGTH + PARAMETER_LENGTH_IND_LENGTH > (guint)(tvb_reported_length_remaining(optional_parameters_tvb, offset))) {
+        proto_tree_add_expert_format(isup_tree, pinfo, &ei_isup_opt_par_lengt_err, optional_parameters_tvb, offset, -1,
+          "Wrong parameter length %u, should be %u",
+          parameter_length,
+          tvb_reported_length_remaining(optional_parameters_tvb, offset)- (PARAMETER_TYPE_LENGTH + PARAMETER_LENGTH_IND_LENGTH));
+        return;
+      }
 
       parameter_tree = proto_tree_add_subtree_format(isup_tree, optional_parameters_tvb,
                                            offset,
@@ -10311,8 +10319,8 @@ dissect_application_isup(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
   if (data) {
     http_message_info_t *message_info = (http_message_info_t *)data;
     if (message_info->media_str) {
-      version = ws_find_media_type_parameter(message_info->media_str, "version");
-      base = ws_find_media_type_parameter(message_info->media_str, "base");
+      version = ws_find_media_type_parameter(wmem_packet_scope(), message_info->media_str, "version");
+      base = ws_find_media_type_parameter(wmem_packet_scope(), message_info->media_str, "base");
       if ((version && g_ascii_strncasecmp(version, "ansi", 4) == 0) ||
           (base && g_ascii_strncasecmp(base, "ansi", 4) == 0)) {
         /*
@@ -10343,8 +10351,6 @@ dissect_application_isup(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
       } else {
         isup_standard = ITU_STANDARD;
       }
-      g_free(version);
-      g_free(base);
     } else {
       /* default to ITU */
       isup_standard = ITU_STANDARD;
@@ -11927,7 +11933,8 @@ proto_register_isup(void)
     { &ei_isup_status_subfield_not_present, { "isup.status_subfield_not_present", PI_PROTOCOL, PI_NOTE, "Status subfield is not present with this message type", EXPFILL }},
     { &ei_isup_message_type_no_optional_parameters, { "isup.message_type.no_optional_parameters", PI_PROTOCOL, PI_NOTE, "No optional parameters are possible with this message type", EXPFILL }},
     { &ei_isup_empty_number, { "isup.empty_number", PI_PROTOCOL, PI_NOTE, "(empty) number", EXPFILL }},
-    { &ei_isup_too_many_digits, { "isup.too_many_digits", PI_MALFORMED, PI_ERROR, "Too many digits", EXPFILL }}
+    { &ei_isup_too_many_digits, { "isup.too_many_digits", PI_MALFORMED, PI_ERROR, "Too many digits", EXPFILL }},
+    { &ei_isup_opt_par_lengt_err, { "isup.opt_par_lengt_err", PI_MALFORMED, PI_ERROR, "Optional parameter length is wrong", EXPFILL }}
   };
 
   static const enum_val_t isup_variants[] = {

@@ -55,7 +55,10 @@ PacketDialog::PacketDialog(QWidget &parent, CaptureFile &cf, frame_data *fdata) 
     }
 
     rec_ = cap_file_.capFile()->rec;
+
+#ifndef __clang_analyzer__
     packet_data_ = (guint8 *) g_memdup(ws_buffer_start_ptr(&(cap_file_.capFile()->buf)), fdata->cap_len);
+#endif
 
     /* proto tree, visible. We need a proto tree if there's custom columns */
     epan_dissect_init(&edt_, cap_file_.capFile()->epan, TRUE, TRUE);
@@ -66,7 +69,9 @@ PacketDialog::PacketDialog(QWidget &parent, CaptureFile &cf, frame_data *fdata) 
                      fdata, &(cap_file_.capFile()->cinfo));
     epan_dissect_fill_in_columns(&edt_, TRUE, TRUE);
 
-    proto_tree_ = new ProtoTree(ui->packetSplitter);
+    proto_tree_ = new ProtoTree(ui->packetSplitter, &edt_);
+    // Do not call proto_tree_->setCaptureFile, ProtoTree only needs the
+    // dissection context.
     proto_tree_->setRootNode(edt_.tree);
 
     byte_view_tab_ = new ByteViewTab(ui->packetSplitter, &edt_);

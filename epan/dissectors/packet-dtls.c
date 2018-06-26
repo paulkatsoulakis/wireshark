@@ -607,7 +607,7 @@ decrypt_dtls_record(tvbuff_t *tvb, packet_info *pinfo, guint32 offset, SslDecryp
       ssl_debug_printf("decrypt_dtls_record: no decoder available\n");
       return FALSE;
     }
-    success = ssl_decrypt_record(ssl, decoder, content_type, record_version,
+    success = ssl_decrypt_record(ssl, decoder, content_type, record_version, FALSE,
                            tvb_get_ptr(tvb, offset, record_length), record_length,
                            &dtls_compressed_data, &dtls_decrypted_data, &dtls_decrypted_data_avail) == 0;
   }
@@ -1757,7 +1757,7 @@ proto_register_dtls(void)
     { &hf_dtls_record_version,
       { "Version", "dtls.record.version",
         FT_UINT16, BASE_HEX, VALS(ssl_versions), 0x0,
-        "Record layer version.", HFILL }
+        "Record layer version", HFILL }
     },
     { &hf_dtls_record_epoch,
       { "Epoch", "dtls.record.epoch",
@@ -1954,6 +1954,10 @@ proto_register_dtls(void)
                                        "DTLS", "dtls");
 
   dtls_associations = register_dissector_table("dtls.port", "DTLS Port", proto_dtls, FT_UINT16, BASE_DEC);
+
+  ssl_common_register_dtls_alpn_dissector_table("dtls.handshake.extensions_alpn_str",
+        "DTLS Application-Layer Protocol Negotiation (ALPN) Protocol IDs",
+        proto_dtls);
 
   /* Required function calls to register the header fields and
    * subtrees used */

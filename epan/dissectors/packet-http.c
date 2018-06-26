@@ -138,6 +138,7 @@ static expert_field ei_http_te_unknown = EI_INIT;
 static expert_field ei_http_subdissector_failed = EI_INIT;
 static expert_field ei_http_ssl_port = EI_INIT;
 static expert_field ei_http_leading_crlf = EI_INIT;
+static expert_field ei_http_bad_header_name = EI_INIT;
 
 static dissector_handle_t http_handle;
 static dissector_handle_t http_tcp_handle;
@@ -158,10 +159,12 @@ typedef struct _header_field_t {
 	gchar* header_desc;
 } header_field_t;
 
-static header_field_t* header_fields = NULL;
-static guint num_header_fields = 0;
+static header_field_t* header_fields;
+static guint num_header_fields;
 
-static GHashTable* header_fields_hash = NULL;
+static GHashTable* header_fields_hash;
+static hf_register_info* dynamic_hf;
+static guint dynamic_hf_size;
 
 static gboolean
 header_fields_update_cb(void *r, char **err)
@@ -666,7 +669,7 @@ prior referers are 'ticked' as well, so that one can easily see the breakdown.
 /* Root node for all referer statistics */
 static int st_node_requests_by_referer = -1;
 /* Referer statistics root node's text */
-static const gchar *st_str_requests_by_referer = "HTTP Requests by HTTP Referer";
+static const gchar *st_str_request_sequences = "HTTP Request Sequences";
 
 /* Mapping of URIs to the most-recently seen node id */
 static wmem_map_t* refstats_uri_to_node_id_hash = NULL;
@@ -676,9 +679,9 @@ static wmem_map_t* refstats_node_id_to_uri_hash = NULL;
 static wmem_map_t* refstats_node_id_to_parent_node_id_hash = NULL;
 
 
-/* HTTP/Referers stats init function */
+/* HTTP/Request Sequences stats init function */
 static void
-http_ref_stats_tree_init(stats_tree* st)
+http_seq_stats_tree_init(stats_tree* st)
 {
 	gint root_node_id = 0;
 	gpointer root_node_id_p = GINT_TO_POINTER(root_node_id);
@@ -690,9 +693,9 @@ http_ref_stats_tree_init(stats_tree* st)
 	refstats_uri_to_node_id_hash = wmem_map_new(wmem_file_scope(), wmem_str_hash, g_str_equal);
 
 	/* Add the root node and its mappings */
-	st_node_requests_by_referer = stats_tree_create_node(st, st_str_requests_by_referer, root_node_id, TRUE);
+	st_node_requests_by_referer = stats_tree_create_node(st, st_str_request_sequences, root_node_id, TRUE);
 	node_id_p = GINT_TO_POINTER(st_node_requests_by_referer);
-	uri = wmem_strdup(wmem_file_scope(), st_str_requests_by_referer);
+	uri = wmem_strdup(wmem_file_scope(), st_str_request_sequences);
 
 	wmem_map_insert(refstats_uri_to_node_id_hash, uri, node_id_p);
 	wmem_map_insert(refstats_node_id_to_uri_hash, node_id_p, uri);
@@ -700,7 +703,7 @@ http_ref_stats_tree_init(stats_tree* st)
 }
 
 static gint
-http_ref_stats_tick_referer(stats_tree* st, const http_info_value_t* v)
+http_seq_stats_tick_referer(stats_tree* st, const gchar* arg_referer_uri)
 {
 	gint root_node_id = st_node_requests_by_referer;
 	gpointer root_node_id_p = GINT_TO_POINTER(st_node_requests_by_referer);
@@ -712,13 +715,13 @@ http_ref_stats_tick_referer(stats_tree* st, const http_info_value_t* v)
 
 	/* Tick the referer's URI */
 	/* Does the node exist? */
-	if (!wmem_map_lookup_extended(refstats_uri_to_node_id_hash, v->referer_uri, NULL, &referer_node_id_p)) {
+	if (!wmem_map_lookup_extended(refstats_uri_to_node_id_hash, arg_referer_uri, NULL, &referer_node_id_p)) {
 		/* The node for the referer didn't already exist, create the mappings */
-		referer_node_id = tick_stat_node(st, v->referer_uri, root_node_id, TRUE);
+		referer_node_id = tick_stat_node(st, arg_referer_uri, root_node_id, TRUE);
 		referer_node_id_p = GINT_TO_POINTER(referer_node_id);
 		referer_parent_node_id_p = root_node_id_p;
 
-		referer_uri = wmem_strdup(wmem_file_scope(), v->referer_uri);
+		referer_uri = wmem_strdup(wmem_file_scope(), arg_referer_uri);
 		wmem_map_insert(refstats_uri_to_node_id_hash, referer_uri, referer_node_id_p);
 		wmem_map_insert(refstats_node_id_to_uri_hash, referer_node_id_p, referer_uri);
 		wmem_map_insert(refstats_node_id_to_parent_node_id_hash, referer_node_id_p, referer_parent_node_id_p);
@@ -726,20 +729,20 @@ http_ref_stats_tick_referer(stats_tree* st, const http_info_value_t* v)
 		/* The node for the referer already exists, tick it */
 		referer_parent_node_id_p = wmem_map_lookup(refstats_node_id_to_parent_node_id_hash, referer_node_id_p);
 		referer_parent_node_id = GPOINTER_TO_INT(referer_parent_node_id_p);
-		referer_node_id = tick_stat_node(st, v->referer_uri, referer_parent_node_id, TRUE);
+		referer_node_id = tick_stat_node(st, arg_referer_uri, referer_parent_node_id, TRUE);
 	}
 	return referer_node_id;
 }
 
 static void
-http_ref_stats_tick_request(stats_tree* st, const http_info_value_t* v, gint referer_node_id)
+http_seq_stats_tick_request(stats_tree* st, const gchar* arg_full_uri, gint referer_node_id)
 {
 	gpointer referer_node_id_p = GINT_TO_POINTER(referer_node_id);
 	gint node_id;
 	gpointer node_id_p;
 	gchar *uri;
 
-	node_id = tick_stat_node(st, v->full_uri, referer_node_id, TRUE);
+	node_id = tick_stat_node(st, arg_full_uri, referer_node_id, TRUE);
 	node_id_p = GINT_TO_POINTER(node_id);
 
 	/* Update the mappings. Even if the URI was already seen, the URI->node mapping may need to be updated */
@@ -748,7 +751,7 @@ http_ref_stats_tick_request(stats_tree* st, const http_info_value_t* v, gint ref
 	uri = (gchar *) wmem_map_lookup(refstats_node_id_to_uri_hash, node_id_p);
 	if (!uri) {
 		/* node not found, add mappings for the node and uri */
-		uri = wmem_strdup(wmem_file_scope(), v->full_uri);
+		uri = wmem_strdup(wmem_file_scope(), arg_full_uri);
 
 		wmem_map_insert(refstats_uri_to_node_id_hash, uri, node_id_p);
 		wmem_map_insert(refstats_node_id_to_uri_hash, node_id_p, uri);
@@ -759,26 +762,155 @@ http_ref_stats_tick_request(stats_tree* st, const http_info_value_t* v, gint ref
 	}
 }
 
-/* HTTP/Referers stats packet function */
+static gchar*
+determine_http_location_target(const gchar *base_url, const gchar * location_url)
+{
+	/* Resolving a base URI + relative URI to an absolute URI ("Relative Resolution")
+	is complicated. Because of that, we take shortcuts that may result in
+	inaccurate results, but is also significantly simpler.
+	It would be best to use an external library to do this for us.
+	For reference, the RFC is located at https://tools.ietf.org/html/rfc3986#section-5.4
+
+	Returns NULL if the resolution fails
+	*/
+	gchar *final_target;
+
+	/* base_url must be an absolute URL.*/
+	if (strstr(base_url, "://") == NULL){
+		return NULL;
+	}
+
+	/* Empty Location */
+	if (location_url[0] == '\0') {
+		final_target = wmem_strdup(wmem_packet_scope(), base_url);
+		return final_target;
+	}
+	/* Protocol Relative */
+	else if (g_str_has_prefix(location_url, "//") ) {
+		char *base_scheme = g_uri_parse_scheme(base_url);
+		if (base_scheme == NULL) {
+			return NULL;
+		}
+		final_target = wmem_strdup_printf(wmem_packet_scope(), "%s:%s", base_scheme, location_url);
+		g_free(base_scheme);
+		return final_target;
+	}
+	/* Absolute URL*/
+	else if (strstr(location_url, "://") != NULL) {
+		final_target = wmem_strdup(wmem_packet_scope(), location_url);
+		return final_target;
+	}
+	/* Relative */
+	else {
+		gchar *start_fragment = strstr(base_url, "#");
+		gchar *start_query = NULL;
+		gchar *base_url_no_fragment = NULL;
+		gchar *base_url_no_query = NULL;
+
+		/* Strip off the fragment (which should never be present)*/
+		if (start_fragment == NULL) {
+			base_url_no_fragment = wmem_strdup(wmem_packet_scope(), base_url);
+		}
+		else {
+			base_url_no_fragment = wmem_strndup(wmem_packet_scope(), base_url, start_fragment - base_url);
+		}
+
+		/* Strip off the query (Queries are stripped from all relative URIs) */
+		start_query = strstr(base_url_no_fragment, "?");
+		if (start_query == NULL) {
+			base_url_no_query = wmem_strdup(wmem_packet_scope(), base_url_no_fragment);
+		}
+		else {
+			base_url_no_query = wmem_strndup(wmem_packet_scope(), base_url_no_fragment, start_query - base_url_no_fragment);
+		}
+
+		/* A leading question mark (?) means to replace the old query with the new*/
+		if (g_str_has_prefix(location_url, "?")) {
+			final_target = wmem_strdup_printf(wmem_packet_scope(), "%s%s", base_url_no_query, location_url);
+			return final_target;
+		}
+		/* A leading slash means to put the location after the netloc */
+		else if (g_str_has_prefix(location_url, "/")) {
+			gchar *scheme_end = strstr(base_url_no_query, "://") + 3;
+			gchar *netloc_end;
+			gint netloc_length;
+			if (scheme_end[0] == '\0') {
+				return NULL;
+			}
+			netloc_end = strstr(scheme_end, "/");
+			if (netloc_end == NULL) {
+				return NULL;
+			}
+			netloc_length = (gint) (netloc_end - base_url_no_query);
+			final_target = wmem_strdup_printf(wmem_packet_scope(), "%.*s%s", netloc_length, base_url_no_query, location_url);
+			return final_target;
+		}
+		/* Otherwise, it replaces the last element in the URI */
+		else {
+			gchar *scheme_end = strstr(base_url_no_query, "://") + 3;
+			gchar *end_of_path = g_strrstr(scheme_end, "/");
+
+			if (end_of_path != NULL) {
+				gint base_through_path = (gint) (end_of_path - base_url_no_query);
+				final_target = wmem_strdup_printf(wmem_packet_scope(), "%.*s/%s", base_through_path, base_url_no_query, location_url);
+			}
+			else {
+				final_target = wmem_strdup_printf(wmem_packet_scope(), "%s/%s", base_url_no_query, location_url);
+			}
+
+			return final_target;
+		}
+	}
+	return NULL;
+}
+
+/* HTTP/Request Sequences stats packet function */
 static int
-http_ref_stats_tree_packet(stats_tree* st, packet_info* pinfo _U_, epan_dissect_t* edt _U_, const void* p)
+http_seq_stats_tree_packet(stats_tree* st, packet_info* pinfo _U_, epan_dissect_t* edt _U_, const void* p)
 {
 	const http_info_value_t* v = (const http_info_value_t*)p;
 
-	gint referer_node_id;
+	/* Track HTTP Redirects */
+	if (v->location_target && v->location_base_uri) {
+		gint referer_node_id;
+		gint parent_node_id;
+		gpointer parent_node_id_p;
+		gpointer current_node_id_p;
+		gchar *uri = NULL;
 
-	gint parent_node_id;
-	gpointer parent_node_id_p;
-	gpointer current_node_id_p;
+		gchar *absolute_target = determine_http_location_target(v->location_base_uri, v->location_target);
+		/* absolute_target is NULL if the resolution fails */
+		if (absolute_target != NULL) {
+			/* We assume the user makes the request to the absolute_target */
+			/* Tick the base URI */
+			referer_node_id = http_seq_stats_tick_referer(st, v->location_base_uri);
 
-	gchar *uri = NULL;
+			/* Tick the location header's resolved URI */
+			http_seq_stats_tick_request(st, absolute_target, referer_node_id);
 
+			/* Tick all stats nodes above the location */
+			current_node_id_p = GINT_TO_POINTER(referer_node_id);
+			while (wmem_map_lookup_extended(refstats_node_id_to_parent_node_id_hash, current_node_id_p, NULL, &parent_node_id_p)) {
+				parent_node_id = GPOINTER_TO_INT(parent_node_id_p);
+				uri = (gchar *) wmem_map_lookup(refstats_node_id_to_uri_hash, current_node_id_p);
+				tick_stat_node(st, uri, parent_node_id, TRUE);
+				current_node_id_p = parent_node_id_p;
+			}
+		}
+	}
+
+	/* Track HTTP Requests/Referers */
 	if (v->request_method && v->referer_uri && v->full_uri) {
+		gint referer_node_id;
+		gint parent_node_id;
+		gpointer parent_node_id_p;
+		gpointer current_node_id_p;
+		gchar *uri = NULL;
 		/* Tick the referer's URI */
-		referer_node_id = http_ref_stats_tick_referer(st, v);
+		referer_node_id = http_seq_stats_tick_referer(st, v->referer_uri);
 
 		/* Tick the request's URI */
-		http_ref_stats_tick_request(st, v, referer_node_id);
+		http_seq_stats_tick_request(st, v->full_uri, referer_node_id);
 
 		/* Tick all stats nodes above the referer */
 		current_node_id_p = GINT_TO_POINTER(referer_node_id);
@@ -917,7 +1049,6 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 	int		first_linelen, linelen;
 	gboolean	is_request_or_reply, is_ssl = FALSE;
 	gboolean	saw_req_resp_or_header;
-	guchar		c;
 	http_type_t     http_type;
 	proto_item	*hdr_item = NULL;
 	ReqRespDissector reqresp_dissector;
@@ -1040,7 +1171,7 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 		 * which is done by disabling body desegmentation.
 		 */
 		try_desegment_body = (http_desegment_body &&
-			(!(conv_data->request_method && g_str_equal(conv_data->request_method, "HEAD"))) &&
+			!(http_type == HTTP_RESPONSE && conv_data->request_method && g_str_equal(conv_data->request_method, "HEAD")) &&
 			!end_of_stream);
 		if (!req_resp_hdrs_do_reassembly(tvb, offset, pinfo,
 		    http_desegment_headers, try_desegment_body)) {
@@ -1080,6 +1211,8 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 	stat_info->referer_uri = NULL;
 	stat_info->http_host = NULL;
 	stat_info->full_uri = NULL;
+	stat_info->location_target = NULL;
+	stat_info->location_base_uri = NULL;
 
 	orig_offset = offset;
 
@@ -1141,72 +1274,19 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 		/*
 		 * No.  Does it look like a header?
 		 */
-		linep = line;
 		colon_offset = offset;
-		while (linep < lineend) {
-			c = *linep++;
 
+		linep = (const guchar *)memchr(line, ':', linelen);
+		if (linep) {
 			/*
-			 * This must be a CHAR, and must not be a CTL,
-			 * to be part of a token; that means it must
-			 * be printable ASCII.
-			 *
-			 * XXX - what about leading LWS on continuation
-			 * lines of a header?
+			 * Colon found, assume it is a header.
 			 */
-			if (!g_ascii_isprint(c))
-				break;
-
-			/*
-			 * This mustn't be a SEP to be part of a token;
-			 * a ':' ends the token, everything else is an
-			 * indication that this isn't a header.
-			 */
-			switch (c) {
-
-			case '(':
-			case ')':
-			case '<':
-			case '>':
-			case '@':
-			case ',':
-			case ';':
-			case '\\':
-			case '"':
-			case '/':
-			case '[':
-			case ']':
-			case '?':
-			case '=':
-			case '{':
-			case '}':
-			case ' ':
-				/*
-				 * It's a separator, so it's not part of a
-				 * token, so it's not a field name for the
-				 * beginning of a header.
-				 *
-				 * (We don't have to check for HT; that's
-				 * already been ruled out by "iscntrl()".)
-				 */
-				goto not_http;
-
-			case ':':
-				/*
-				 * This ends the token; we consider this
-				 * to be a header.
-				 */
-				goto is_http;
-
-			default:
-				colon_offset++;
-				break;
-			}
+			colon_offset += (int)(linep - line);
+			goto is_http;
 		}
 
 		/*
-		 * We haven't seen the colon, but everything else looks
-		 * OK for a header line.
+		 * We haven't seen the colon yet.
 		 *
 		 * If we've already seen an HTTP request or response
 		 * line, or a header line, and we're at the end of
@@ -1230,7 +1310,6 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 		if (saw_req_resp_or_header)
 			tvb_ensure_bytes_exist(tvb, offset, linelen + 1);
 
-	not_http:
 		/*
 		 * We don't consider this part of an HTTP request or
 		 * reply, so we don't display it.
@@ -1296,7 +1375,6 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 		}
 		offset = next_offset;
 	}
-
 	if (stat_info->http_host && stat_info->request_uri) {
 		proto_item *e_ti;
 		gchar      *uri;
@@ -1312,7 +1390,7 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 				    g_strstrip(wmem_strdup(wmem_packet_scope(), stat_info->http_host)), stat_info->request_uri);
 		}
 		stat_info->full_uri = wmem_strdup(wmem_packet_scope(), uri);
-
+		conv_data->full_uri = wmem_strdup(wmem_file_scope(), uri);
 		if (tree) {
 			e_ti = proto_tree_add_string(http_tree,
 					     hf_http_request_full_uri, tvb, 0,
@@ -2593,6 +2671,7 @@ typedef struct {
 #define HDR_WEBSOCKET_PROTOCOL		10
 #define HDR_WEBSOCKET_EXTENSIONS	11
 #define HDR_REFERER			12
+#define HDR_LOCATION			13
 
 static const header_info headers[] = {
 	{ "Authorization", &hf_http_authorization, HDR_AUTHORIZATION },
@@ -2615,7 +2694,7 @@ static const header_info headers[] = {
 	{ "Date", &hf_http_date, HDR_NO_SPECIAL },
 	{ "Cache-Control", &hf_http_cache_control, HDR_NO_SPECIAL },
 	{ "Server", &hf_http_server, HDR_NO_SPECIAL },
-	{ "Location", &hf_http_location, HDR_NO_SPECIAL },
+	{ "Location", &hf_http_location, HDR_LOCATION },
 	{ "Sec-WebSocket-Accept", &hf_http_sec_websocket_accept, HDR_NO_SPECIAL },
 	{ "Sec-WebSocket-Extensions", &hf_http_sec_websocket_extensions, HDR_WEBSOCKET_EXTENSIONS },
 	{ "Sec-WebSocket-Key", &hf_http_sec_websocket_key, HDR_NO_SPECIAL },
@@ -2647,52 +2726,67 @@ get_hf_for_header(char* header_name)
  *
  */
 static void
-header_fields_initialize_cb(void)
+deregister_header_fields(void)
 {
-	static hf_register_info* hf;
+	if (dynamic_hf) {
+		/* Deregister all fields */
+		for (guint i = 0; i < dynamic_hf_size; i++) {
+			proto_deregister_field (proto_http, *(dynamic_hf[i].p_id));
+			g_free (dynamic_hf[i].p_id);
+		}
+
+		proto_add_deregistered_data (dynamic_hf);
+		dynamic_hf = NULL;
+		dynamic_hf_size = 0;
+	}
+
+	if (header_fields_hash) {
+		g_hash_table_destroy (header_fields_hash);
+		header_fields_hash = NULL;
+	}
+}
+
+static void
+header_fields_post_update_cb(void)
+{
 	gint* hf_id;
-	guint i;
 	gchar* header_name;
 	gchar* header_name_key;
 
-	if (header_fields_hash && hf) {
-		guint hf_size = g_hash_table_size (header_fields_hash);
-		/* Deregister all fields */
-		for (i = 0; i < hf_size; i++) {
-			proto_deregister_field (proto_http, *(hf[i].p_id));
-			g_free (hf[i].p_id);
-		}
-		g_hash_table_destroy (header_fields_hash);
-		proto_add_deregistered_data (hf);
-		header_fields_hash = NULL;
-	}
+	deregister_header_fields();
 
 	if (num_header_fields) {
-		header_fields_hash = g_hash_table_new_full(g_str_hash, g_str_equal,
-				g_free, NULL);
-		hf = g_new0(hf_register_info, num_header_fields);
+		header_fields_hash = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+		dynamic_hf = g_new0(hf_register_info, num_header_fields);
+		dynamic_hf_size = num_header_fields;
 
-		for (i = 0; i < num_header_fields; i++) {
+		for (guint i = 0; i < dynamic_hf_size; i++) {
 			hf_id = g_new(gint,1);
 			*hf_id = -1;
 			header_name = g_strdup(header_fields[i].header_name);
 			header_name_key = g_ascii_strdown(header_name, -1);
 
-			hf[i].p_id = hf_id;
-			hf[i].hfinfo.name = header_name;
-			hf[i].hfinfo.abbrev = g_strdup_printf("http.header.%s", header_name);
-			hf[i].hfinfo.type = FT_STRING;
-			hf[i].hfinfo.display = BASE_NONE;
-			hf[i].hfinfo.strings = NULL;
-			hf[i].hfinfo.bitmask = 0;
-			hf[i].hfinfo.blurb = g_strdup(header_fields[i].header_desc);
-			HFILL_INIT(hf[i]);
+			dynamic_hf[i].p_id = hf_id;
+			dynamic_hf[i].hfinfo.name = header_name;
+			dynamic_hf[i].hfinfo.abbrev = g_strdup_printf("http.header.%s", header_name);
+			dynamic_hf[i].hfinfo.type = FT_STRING;
+			dynamic_hf[i].hfinfo.display = BASE_NONE;
+			dynamic_hf[i].hfinfo.strings = NULL;
+			dynamic_hf[i].hfinfo.bitmask = 0;
+			dynamic_hf[i].hfinfo.blurb = g_strdup(header_fields[i].header_desc);
+			HFILL_INIT(dynamic_hf[i]);
 
 			g_hash_table_insert(header_fields_hash, header_name_key, hf_id);
 		}
 
-		proto_register_field_array(proto_http, hf, num_header_fields);
+		proto_register_field_array(proto_http, dynamic_hf, dynamic_hf_size);
 	}
+}
+
+static void
+header_fields_reset_cb(void)
+{
+	deregister_header_fields();
 }
 
 /**
@@ -2760,6 +2854,13 @@ http_parse_transfer_coding(const char *value, headers_t *eh_ptr)
 	return is_fully_parsed;
 }
 
+static gboolean
+is_token_char(char c)
+{
+	/* tchar according to https://tools.ietf.org/html/rfc7230#section-3.2.6 */
+	return strchr("!#$%&\\:*+-.^_`|~", c) || g_ascii_isalnum(c);
+}
+
 static void
 process_header(tvbuff_t *tvb, int offset, int next_offset,
 	       const guchar *line, int linelen, int colon_offset,
@@ -2784,7 +2885,51 @@ process_header(tvbuff_t *tvb, int offset, int next_offset,
 	len = next_offset - offset;
 	line_end_offset = offset + linelen;
 	header_len = colon_offset - offset;
+
+	/*
+	 * Validate the header name. This allows no space between the field name
+	 * and colon (RFC 7230, Section. 3.2.4).
+	 */
+	gboolean valid_header_name = header_len != 0;
+	if (valid_header_name) {
+		for (i = 0; i < header_len; i++) {
+			/*
+			 * NUL is not a valid character; treat it specially
+			 * due to C's notion that strings are NUL-terminated.
+			 */
+			if (line[i] == '\0') {
+				valid_header_name = FALSE;
+				break;
+			}
+			if (!is_token_char(line[i])) {
+				valid_header_name = FALSE;
+				break;
+			}
+		}
+	}
+	/**
+	 * Not a valid header name? Just add a line plus expert info.
+	 */
+	if (!valid_header_name) {
+		if (http_type == HTTP_REQUEST) {
+			hf_index = hf_http_request_line;
+		} else if (http_type == HTTP_RESPONSE) {
+			hf_index = hf_http_response_line;
+		} else {
+			hf_index = hf_http_unknown_header;
+		}
+		it = proto_tree_add_item(tree, hf_index, tvb, offset, len, ENC_NA|ENC_ASCII);
+		proto_item_set_text(it, "%s", format_text(wmem_packet_scope(), line, len));
+		expert_add_info(pinfo, it, &ei_http_bad_header_name);
+		return;
+	}
+
+	/*
+	 * Make a null-terminated, all-lower-case version of the header
+	 * name.
+	 */
 	header_name = wmem_ascii_strdown(wmem_packet_scope(), &line[0], header_len);
+
 	hf_index = find_header_hf_value(tvb, offset, header_len);
 
 	/*
@@ -3078,6 +3223,13 @@ process_header(tvbuff_t *tvb, int offset, int next_offset,
 
 		case HDR_REFERER:
 			stat_info->referer_uri = wmem_strndup(wmem_packet_scope(), value, value_len);
+			break;
+
+		case HDR_LOCATION:
+			if (conv_data->request_uri){
+				stat_info->location_target = wmem_strndup(wmem_packet_scope(), value, value_len);
+				stat_info->location_base_uri = wmem_strdup(wmem_packet_scope(), conv_data->full_uri);
+			}
 			break;
 		}
 	}
@@ -3772,6 +3924,7 @@ proto_register_http(void)
 		{ &ei_http_subdissector_failed, { "http.subdissector_failed", PI_MALFORMED, PI_NOTE, "HTTP body subdissector failed, trying heuristic subdissector", EXPFILL }},
 		{ &ei_http_ssl_port, { "http.ssl_port", PI_SECURITY, PI_WARN, "Unencrypted HTTP protocol detected over encrypted port, could indicate a dangerous misconfiguration.", EXPFILL }},
 		{ &ei_http_leading_crlf, { "http.leading_crlf", PI_MALFORMED, PI_ERROR, "Leading CRLF previous message in the stream may have extra CRLF", EXPFILL }},
+		{ &ei_http_bad_header_name, { "http.bad_header_name", PI_PROTOCOL, PI_WARN, "Illegal characters found in header name", EXPFILL }},
 	};
 
 	/* UAT for header fields */
@@ -3852,8 +4005,8 @@ proto_register_http(void)
 			      header_fields_copy_cb,
 			      header_fields_update_cb,
 			      header_fields_free_cb,
-			      header_fields_initialize_cb,
-			      NULL,
+			      header_fields_post_update_cb,
+			      header_fields_reset_cb,
 			      custom_header_uat_fields
 	);
 
@@ -3960,6 +4113,12 @@ proto_reg_handoff_http(void)
 	ssdp_handle = create_dissector_handle(dissect_ssdp, proto_ssdp);
 	dissector_add_uint_with_preference("udp.port", UDP_PORT_SSDP, ssdp_handle);
 
+	/*
+	 * SSL/TLS Application-Layer Protocol Negotiation (ALPN) protocol
+	 * ID.
+	 */
+	dissector_add_string("ssl.handshake.extensions_alpn_str", "http/1.1", http_ssl_handle);
+
 	ntlmssp_handle = find_dissector_add_dependency("ntlmssp", proto_http);
 	gssapi_handle = find_dissector_add_dependency("gssapi", proto_http);
 	sstp_handle = find_dissector_add_dependency("sstp", proto_http);
@@ -3968,7 +4127,7 @@ proto_reg_handoff_http(void)
 	stats_tree_register("http", "http",     "HTTP/Packet Counter",   0, http_stats_tree_packet,      http_stats_tree_init, NULL );
 	stats_tree_register("http", "http_req", "HTTP/Requests",         0, http_req_stats_tree_packet,  http_req_stats_tree_init, NULL );
 	stats_tree_register("http", "http_srv", "HTTP/Load Distribution",0, http_reqs_stats_tree_packet, http_reqs_stats_tree_init, NULL );
-	stats_tree_register("http", "http_ref", "HTTP/Referers",         0, http_ref_stats_tree_packet,  http_ref_stats_tree_init, NULL );
+	stats_tree_register("http", "http_seq", "HTTP/Request Sequences",0, http_seq_stats_tree_packet,  http_seq_stats_tree_init, NULL );
 }
 
 /*

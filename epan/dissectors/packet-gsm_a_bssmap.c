@@ -2630,7 +2630,7 @@ static const range_string speech_version_id_rvals[] = {
     { 0x02,     0x04, "Reserved" },
     { 0x05,     0x05, "GSM speech half rate version 1" },
     { 0x06,     0x10, "Reserved" },
-    { 0x11,     0x11, "GSM speech full rate version 1" },
+    { 0x11,     0x11, "GSM speech full rate version 2 (EFR)" },
     { 0x12,     0x14, "Reserved" },
     { 0x15,     0x15, "GSM speech half rate version 2" },
     { 0x16,     0x20, "Reserved" },
@@ -2638,11 +2638,11 @@ static const range_string speech_version_id_rvals[] = {
     { 0x22,     0x24, "Reserved" },
     { 0x25,     0x25, "GSM speech half rate version 3 (AMR)" },
     { 0x26,     0x40, "Reserved" },
-    { 0x41,     0x41, "GSM speech full rate version 4" },
-    { 0x42,     0x42, "GSM speech full rate version 5" },
+    { 0x41,     0x41, "GSM speech full rate version 4 (AMR-WB)" },
+    { 0x42,     0x42, "GSM speech full rate version 5 (AMR-WB)" },
     { 0x43,     0x44, "Reserved" },
-    { 0x45,     0x45, "GSM speech half rate version 6" },
-    { 0x46,     0x46, "GSM speech half rate version 4" },
+    { 0x45,     0x45, "GSM speech half rate version 6 (AMR)" },
+    { 0x46,     0x46, "GSM speech half rate version 4 (AMR-WB)" },
     { 0x47,     0x7f, "Reserved" },
 
     { 0, 0, NULL },
@@ -2651,7 +2651,7 @@ static const range_string speech_version_id_rvals[] = {
 static const range_string speech_version_id_short_rvals[] = {
     { 0x01,     0x01, "FR1" },
     { 0x05,     0x05, "HR1" },
-    { 0x11,     0x11, "FR12" },
+    { 0x11,     0x11, "FR2 (EFR)" },
     { 0x15,     0x15, "HR2" },
     { 0x21,     0x21, "FR3 (AMR)" },
     { 0x25,     0x25, "HR3 (AMR)" },
@@ -6956,31 +6956,69 @@ bssmap_reroute_complete(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, gui
     EXTRANEOUS_DATA_CHECK(curr_len, 0, pinfo, &ei_gsm_a_bssmap_extraneous_data);
 }
 
-#if 0
 /*
  * 3.2.1.91 LCLS-CONNECT-CONTROL
  */
+static void
+bssmap_lcls_conn_ctrl(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, guint32 offset, guint len)
+{
+    guint32 curr_offset;
+    guint32 consumed;
+    guint   curr_len;
+
+    curr_offset = offset;
+    curr_len = len;
+
 
     /* LCLS-Configuration 3.2.2.116 MSC-BSS O (note1) 2 */
-    /* ELEM_OPT_TV(BE_LCLS_CONF, GSM_A_PDU_TYPE_BSSMAP, BE_LCLS_CONF, NULL); */
+    ELEM_OPT_TV(BE_LCLS_CONF, GSM_A_PDU_TYPE_BSSMAP, BE_LCLS_CONF, NULL);
     /* LCLS-Connection-Status-Control 3.2.2.117 MSC-BSS O (note1) 2 */
-    /* ELEM_OPT_TV(BE_LCLS_CON_STATUS_CONTROL, GSM_A_PDU_TYPE_BSSMAP, BE_LCLS_CON_STATUS_CONTROL, NULL); */
+    ELEM_OPT_TV(BE_LCLS_CON_STATUS_CONTROL, GSM_A_PDU_TYPE_BSSMAP, BE_LCLS_CON_STATUS_CONTROL, NULL);
+
+    EXTRANEOUS_DATA_CHECK(curr_len, 0, pinfo, &ei_gsm_a_bssmap_extraneous_data);
+}
 
 /*
  * 3.2.1.92 LCLS-CONNECT-CONTROL-ACK
  */
+static void
+bssmap_lcls_conn_ctrl_ack(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, guint32 offset, guint len)
+{
+    guint32 curr_offset;
+    guint32 consumed;
+    guint   curr_len;
+
+    curr_offset = offset;
+    curr_len = len;
 
     /* LCLS-BSS-Status 3.2.2.119 BSS-MSC M 2 */
+    ELEM_OPT_TV(BE_LCLS_BSS_STATUS, GSM_A_PDU_TYPE_BSSMAP, BE_LCLS_BSS_STATUS, NULL);
 
-
+    EXTRANEOUS_DATA_CHECK(curr_len, 0, pinfo, &ei_gsm_a_bssmap_extraneous_data);
+}
 /*
+ *
  * 3.2.1.93 LCLS-NOTIFICATION
  */
+static void
+bssmap_lcls_notif(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, guint32 offset, guint len)
+{
+    guint32 curr_offset;
+    guint32 consumed;
+    guint   curr_len;
+
+    curr_offset = offset;
+    curr_len = len;
 
     /* LCLS-BSS-Status 3.2.2.119 BSS-MSC O (note 1) 2 */
-    /* ELEM_OPT_TV(BE_LCLS_BSS_STATUS, GSM_A_PDU_TYPE_BSSMAP, BE_LCLS_BSS_STATUS, NULL);*/
+    ELEM_OPT_TV(BE_LCLS_BSS_STATUS, GSM_A_PDU_TYPE_BSSMAP, BE_LCLS_BSS_STATUS, NULL);
     /* LCLS-Break-Request 3.2.2.120 BSS-MSC O (note 1) 1 */
+    ELEM_OPT_T(BE_LCLS_BREAK_REQ, GSM_A_PDU_TYPE_BSSMAP, BE_LCLS_BREAK_REQ, NULL);
 
+    EXTRANEOUS_DATA_CHECK(curr_len, 0, pinfo, &ei_gsm_a_bssmap_extraneous_data);
+}
+
+#if 0
 /*
  * 3.2.1.94     MS REGISTRATION ENQUIRY
  */
@@ -7120,9 +7158,9 @@ static void (*bssmap_msg_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pi
     bssmap_int_ho_cmd,                  /* 0x72 Internal Handover Command */
     bssmap_int_ho_enq,                  /* 0x73 Internal Handover Enquiry */
 
-    NULL,                               /* 0x74 LCLS-Connect-Control */
-    NULL,                               /* 0x75 LCLS-Connect-Control-Ack */
-    NULL,                               /* 0x76 LCLS-Notification */
+    bssmap_lcls_conn_ctrl,              /* 0x74 LCLS-Connect-Control */
+    bssmap_lcls_conn_ctrl_ack,          /* 0x75 LCLS-Connect-Control-Ack */
+    bssmap_lcls_notif,                  /* 0x76 LCLS-Notification */
     NULL,                               /* 0x77 Unallocated */
     bssmap_reroute_cmd,                 /* 0x78 Reroute Command */
     bssmap_reroute_complete,            /* 0x79 Reroute Complete */

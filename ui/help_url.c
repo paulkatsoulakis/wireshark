@@ -6,7 +6,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 2000 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
@@ -218,7 +219,7 @@ topic_action_url(topic_action_e action)
         url = user_guide_url("ChCustProtocolDissectionSection.html");
         break;
     case(HELP_FOLLOW_STREAM_DIALOG):
-        url = user_guide_url("ChAdvFollowTCPSection.html");
+        url = user_guide_url("ChAdvFollowStreamSection.html");
         break;
     case(HELP_SHOW_PACKET_BYTES_DIALOG):
         url = user_guide_url("ChAdvShowPacketBytes.html");
@@ -252,6 +253,9 @@ topic_action_url(topic_action_e action)
         break;
     case(HELP_STATS_LTE_RLC_TRAFFIC_DIALOG):
         url = user_guide_url("ChTelLTERLCTraffic.html");
+        break;
+    case(HELP_STATS_TCP_STREAM_GRAPHS_DIALOG):
+        url = user_guide_url("ChStatTCPStreamGraphs.html");
         break;
     case(HELP_STATS_WLAN_TRAFFIC_DIALOG):
         url = user_guide_url("ChStatWLANTraffic.html");

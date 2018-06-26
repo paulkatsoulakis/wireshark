@@ -454,7 +454,7 @@ add_name_and_type(proto_tree *tree, tvbuff_t *tvb, int offset, int len,
     }
 }
 
-#define MAX_NAME_LEN (NETBIOS_NAME_LEN - 1)*4 + MAXDNAME + 64
+#define MAX_NAME_LEN (NETBIOS_NAME_LEN - 1)*4 + MAX_DNAME_LEN + 64
 
 static int
 dissect_nbns_query(tvbuff_t *tvb, int offset, int nbns_data_offset,
@@ -1669,10 +1669,7 @@ dissect_nbss(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
          * Construct a tvbuff containing the amount of the payload we have
          * available.  Make its reported length the amount of data in the PDU.
          */
-        length = length_remaining;
-        if (length > plen)
-            length = plen;
-        next_tvb = tvb_new_subset_length_caplen(tvb, offset, length, plen);
+        next_tvb = tvb_new_subset_length(tvb, offset, plen);
 
         dissect_nbss_packet(next_tvb, pinfo, tree, is_cifs);
 

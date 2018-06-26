@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "conversation_dialog.h"
 
@@ -198,26 +199,20 @@ void ConversationDialog::followStream()
         return;
     }
 
-    QString filter;
-    follow_type_t ftype = FOLLOW_TCP;
+    follow_type_t ftype;
     switch (conv_item->etype) {
     case ENDPOINT_TCP:
-        filter = QString("tcp.stream eq %1").arg(conv_item->conv_id);
+        ftype = FOLLOW_TCP;
         break;
     case ENDPOINT_UDP:
-        filter = QString("udp.stream eq %1").arg(conv_item->conv_id);
         ftype = FOLLOW_UDP;
         break;
     default:
-        break;
-    }
-
-    if (filter.length() < 1) {
         return;
     }
 
-    emit filterAction(filter, FilterAction::ActionApply, FilterAction::ActionTypePlain);
-    emit openFollowStreamDialog(ftype);
+    // Will set the display filter too.
+    emit openFollowStreamDialog(ftype, (int)conv_item->conv_id);
 }
 
 void ConversationDialog::graphTcp()

@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef MULTICASTSTATISTICSDIALOG_H
 #define MULTICASTSTATISTICSDIALOG_H
@@ -35,13 +36,14 @@ private:
     static void tapReset(mcaststream_tapinfo_t *tapinfo);
     static void tapDraw(mcaststream_tapinfo_t *tapinfo);
 
+    virtual QList<QVariant> treeItemData(QTreeWidgetItem *ti) const;
     virtual const QString filterExpression();
 
 private slots:
     void updateWidgets();
     void updateMulticastParameters();
     virtual void fillTree();
-    void captureEvent(CaptureEvent *e);
+    void captureEvent(CaptureEvent e);
 };
 
 #endif // MULTICASTSTATISTICSDIALOG_H

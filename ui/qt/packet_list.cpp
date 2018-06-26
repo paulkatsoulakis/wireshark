@@ -69,6 +69,7 @@
 #ifdef Q_OS_WIN
 #include "wsutil/file_util.h"
 #include <QSysInfo>
+#include <Uxtheme.h>
 #endif
 
 // To do:
@@ -133,12 +134,6 @@ packet_list_select_row_from_data(frame_data *fdata_needle)
     return FALSE;
 }
 
-gboolean
-packet_list_check_end(void)
-{
-    return FALSE; // GTK+ only.
-}
-
 void
 packet_list_clear(void)
 {
@@ -148,7 +143,7 @@ packet_list_clear(void)
 }
 
 void
-packet_list_enable_color(gboolean)
+packet_list_recolor_packets(void)
 {
     if (gbl_cur_packet_list) {
         gbl_cur_packet_list->recolorPackets();
@@ -248,6 +243,10 @@ PacketList::PacketList(QWidget *parent) :
     setUniformRowHeights(true);
     setAccessibleName("Packet list");
 
+    // Shrink down to a small but nonzero size in the main splitter.
+    int one_em = fontMetrics().height();
+    setMinimumSize(one_em, one_em);
+
     overlay_sb_ = new OverlayScrollBar(Qt::Vertical, this);
     setVerticalScrollBar(overlay_sb_);
 
@@ -260,63 +259,10 @@ PacketList::PacketList(QWidget *parent) :
     g_assert(gbl_cur_packet_list == NULL);
     gbl_cur_packet_list = this;
 
-    bool style_inactive_selected = true;
-
-#ifdef Q_OS_WIN // && Qt version >= 4.8.6
-    if (QSysInfo::windowsVersion() < QSysInfo::WV_WINDOWS8) {
-        // See if we're running Vista or 7 and we have a theme applied.
-        HMODULE uxtheme_lib = (HMODULE) ws_load_library("uxtheme.dll");
-
-        if (uxtheme_lib) {
-            typedef BOOL (WINAPI *IsAppThemedHandler)(void);
-            typedef BOOL (WINAPI *IsThemeActiveHandler)(void);
-
-            IsAppThemedHandler PIsAppThemed = (IsAppThemedHandler) GetProcAddress(uxtheme_lib, "IsAppThemed");
-            IsThemeActiveHandler PIsThemeActive = (IsThemeActiveHandler) GetProcAddress(uxtheme_lib, "IsThemeActive");
-            if (PIsAppThemed && PIsAppThemed() && PIsThemeActive && PIsThemeActive()) {
-                style_inactive_selected = false;
-            }
-        }
-    }
-#endif
-
-    if (style_inactive_selected) {
-        // XXX Style the protocol tree as well?
-        QPalette inactive_pal = palette();
-        inactive_pal.setCurrentColorGroup(QPalette::Inactive);
-        QColor border = QColor::fromRgb(ColorUtils::alphaBlend(
-                                                inactive_pal.highlightedText(),
-                                                inactive_pal.highlight(),
-                                                0.25));
-        QColor shadow = QColor::fromRgb(ColorUtils::alphaBlend(
-                                                inactive_pal.highlightedText(),
-                                                inactive_pal.highlight(),
-                                                0.07));
-        setStyleSheet(QString(
-                          "QTreeView::item:selected:first:!active {"
-                          "  border-left: 1px solid %1;"
-                          "}"
-                          "QTreeView::item:selected:last:!active {"
-                          "  border-right: 1px solid %1;"
-                          "}"
-                          "QTreeView::item:selected:!active {"
-                          "  border-top: 1px solid %1;"
-                          "  border-bottom: 1px solid %1;"
-                          "  color: %2;"
-                          // Try to approximate a subtle box shadow.
-                          "  background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1"
-                          "    stop: 0 %4, stop: 0.2 %3, stop: 0.8 %3, stop: 1 %4);"
-                          "}")
-                      .arg(border.name())
-                      .arg(inactive_pal.highlightedText().color().name())
-                      .arg(inactive_pal.highlight().color().name())
-                      .arg(shadow.name())
-                      );
-    }
-
     connect(packet_list_model_, SIGNAL(goToPacket(int)), this, SLOT(goToPacket(int)));
     connect(packet_list_model_, SIGNAL(itemHeightChanged(const QModelIndex&)), this, SLOT(updateRowHeights(const QModelIndex&)));
     connect(wsApp, SIGNAL(addressResolutionChanged()), this, SLOT(redrawVisiblePacketsDontSelectCurrent()));
+    connect(wsApp, SIGNAL(columnDataChanged()), this, SLOT(redrawVisiblePacketsDontSelectCurrent()));
 
     header()->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(header(), SIGNAL(customContextMenuRequested(QPoint)),
@@ -332,6 +278,107 @@ PacketList::PacketList(QWidget *parent) :
             this, SIGNAL(showProtocolPreferences(QString)));
     connect(&proto_prefs_menu_, SIGNAL(editProtocolPreference(preference*,pref_module*)),
             this, SIGNAL(editProtocolPreference(preference*,pref_module*)));
+}
+
+void PacketList::colorsChanged()
+{
+    const QString c_active   = "active";
+    const QString c_inactive = "!active";
+
+    QString default_style_format =
+        "QTreeView::item:selected:%1 {}";
+
+    QString flat_style_format =
+        "QTreeView::item:selected:%1 {"
+        "  color: %2;"
+        "  background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1 stop: 0 %3, stop: 1 %3);"
+        "}";
+
+    QString gradient_style_format =
+        "QTreeView::item:selected:%1 {"
+        "  color: %2;"
+        "  background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1 stop: 0 %4, stop: 0.5 %3, stop: 1 %4);"
+        "}";
+
+    QString active_style   = QString();
+    QString inactive_style = QString();
+
+    bool style_inactive_selected = true;
+
+#ifdef Q_OS_WIN // && Qt version >= 4.8.6
+    if (QSysInfo::windowsVersion() < QSysInfo::WV_WINDOWS8) {
+        if (IsAppThemed() && IsThemeActive()) {
+            style_inactive_selected = false;
+        }
+    }
+#endif
+
+    if (prefs.gui_active_style == COLOR_STYLE_DEFAULT) {
+        // ACTIVE = Default
+        active_style = default_style_format.arg(c_active);
+    } else if (prefs.gui_active_style == COLOR_STYLE_FLAT) {
+        // ACTIVE = Flat OR Gradient
+        QColor foreground = ColorUtils::fromColorT(prefs.gui_active_fg);
+        QColor background = ColorUtils::fromColorT(prefs.gui_active_bg);
+
+        active_style = flat_style_format.arg(
+                           c_active,
+                           foreground.name(),
+                           background.name());
+    } else if (prefs.gui_active_style == COLOR_STYLE_GRADIENT) {
+        // ACTIVE = Gradient
+        QColor foreground  = ColorUtils::fromColorT(prefs.gui_active_fg);
+        QColor background1 = ColorUtils::fromColorT(prefs.gui_active_bg);
+        QColor background2 = QColor::fromRgb(ColorUtils::alphaBlend(foreground, background1, COLOR_STYLE_ALPHA));
+
+        active_style = gradient_style_format.arg(
+                           c_active,
+                           foreground.name(),
+                           background1.name(),
+                           background2.name());
+    }
+
+    // INACTIVE style sheet settings
+    if (prefs.gui_inactive_style == COLOR_STYLE_DEFAULT) {
+        // INACTIVE = Default
+        if (style_inactive_selected) {
+            QPalette inactive_pal = palette();
+            inactive_pal.setCurrentColorGroup(QPalette::Inactive);
+
+            QColor foreground = inactive_pal.highlightedText().color();
+            QColor background = inactive_pal.highlight().color();
+
+            inactive_style = flat_style_format.arg(
+                                 c_inactive,
+                                 foreground.name(),
+                                 background.name());
+        } else {
+            inactive_style = default_style_format.arg(c_inactive);
+        }
+    } else if (prefs.gui_inactive_style == COLOR_STYLE_FLAT) {
+        // INACTIVE = Flat
+        QColor foreground = ColorUtils::fromColorT(prefs.gui_inactive_fg);
+        QColor background = ColorUtils::fromColorT(prefs.gui_inactive_bg);
+
+        inactive_style = flat_style_format.arg(
+                             c_inactive,
+                             foreground.name(),
+                             background.name());
+    } else if (prefs.gui_inactive_style == COLOR_STYLE_GRADIENT) {
+        // INACTIVE = Gradient
+        QColor foreground  = ColorUtils::fromColorT(prefs.gui_inactive_fg);
+        QColor background1 = ColorUtils::fromColorT(prefs.gui_inactive_bg);
+        QColor background2 = QColor::fromRgb(ColorUtils::alphaBlend(foreground, background1, COLOR_STYLE_ALPHA));
+
+        inactive_style = gradient_style_format.arg(
+                             c_inactive,
+                             foreground.name(),
+                             background1.name(),
+                             background2.name());
+    }
+
+    // Set the style sheet
+    setStyleSheet(active_style + inactive_style);
 }
 
 void PacketList::drawRow (QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const
@@ -358,7 +405,8 @@ PacketListModel *PacketList::packetListModel() const {
     return packet_list_model_;
 }
 
-void PacketList::selectionChanged (const QItemSelection & selected, const QItemSelection & deselected) {
+void PacketList::selectionChanged (const QItemSelection & selected, const QItemSelection & deselected)
+{
     QTreeView::selectionChanged(selected, deselected);
 
     if (!cap_file_) return;
@@ -386,6 +434,7 @@ void PacketList::selectionChanged (const QItemSelection & selected, const QItemS
 
     if (!cap_file_->edt) {
         viewport()->update();
+        emit fieldSelected(0);
         return;
     }
 
@@ -400,9 +449,7 @@ void PacketList::selectionChanged (const QItemSelection & selected, const QItemS
         viewport()->update();
     }
 
-    if (cap_file_->search_in_progress &&
-        (cap_file_->search_pos != 0 || (cap_file_->string && cap_file_->decode_data)))
-    {
+    if (cap_file_->search_in_progress) {
         match_data  mdata;
         field_info *fi = NULL;
 
@@ -412,16 +459,19 @@ void PacketList::selectionChanged (const QItemSelection & selected, const QItemS
             if (cf_find_string_protocol_tree(cap_file_, cap_file_->edt->tree, &mdata)) {
                 fi = mdata.finfo;
             }
-        } else {
+        } else if (cap_file_->search_pos != 0) {
             // Find the finfo that corresponds to our byte.
             fi = proto_find_field_from_offset(cap_file_->edt->tree, cap_file_->search_pos,
                                               cap_file_->edt->tvb);
         }
 
         if (fi) {
-            emit fieldSelected(new FieldInformation(fi, this));
+            FieldInformation finfo(fi, this);
+            emit fieldSelected(&finfo);
+        } else {
+            emit fieldSelected(0);
         }
-    } else if (!cap_file_->search_in_progress && proto_tree_) {
+    } else if (proto_tree_) {
         proto_tree_->restoreSelectedField();
     }
 }
@@ -448,10 +498,12 @@ void PacketList::contextMenuEvent(QContextMenuEvent *event)
                 break;
             }
         }
+        g_ptr_array_free(finfo_array, TRUE);
     }
     proto_prefs_menu_.setModule(module_name);
 
     QModelIndex ctxIndex = indexAt(event->pos());
+    // frameData will be owned by one of the submenus, see below.
     FrameInformation * frameData =
             new FrameInformation(new CaptureFile(this, cap_file_), packet_list_model_->getRowFdata(ctxIndex.row()));
 
@@ -538,6 +590,8 @@ void PacketList::contextMenuEvent(QContextMenuEvent *event)
 
     QActionGroup * copyEntries = DataPrinter::copyActions(this, frameData);
     submenu->addActions(copyEntries->actions());
+    copyEntries->setParent(submenu);
+    frameData->setParent(submenu);
 
     ctx_menu_.addSeparator();
     ctx_menu_.addMenu(&proto_prefs_menu_);
@@ -708,16 +762,14 @@ void PacketList::drawCurrentPacket()
 // the UI to scroll to that packet).
 // Called from many places.
 void PacketList::redrawVisiblePackets() {
-    update();
-    header()->update();
+    redrawVisiblePacketsDontSelectCurrent();
     drawCurrentPacket();
 }
 
 // Redraw the packet list and detail.
 // Does not scroll back to the selected packet.
 void PacketList::redrawVisiblePacketsDontSelectCurrent() {
-    update();
-    header()->update();
+    packet_list_model_->invalidateAllColumnStrings();
 }
 
 void PacketList::resetColumns()
@@ -817,6 +869,9 @@ void PacketList::applyRecentColumnWidths()
 
 void PacketList::preferencesChanged()
 {
+    // Update color style changes
+    colorsChanged();
+
     // Related packet delegate
     if (prefs.gui_packet_list_show_related) {
         setItemDelegateForColumn(0, &related_packet_delegate_);
@@ -883,6 +938,9 @@ void PacketList::captureFileReadFinished()
 {
     packet_list_model_->flushVisibleRows();
     packet_list_model_->dissectIdle(true);
+    // Invalidating the column strings picks up and request/response
+    // tracking changes. We might just want to call it from flushVisibleRows.
+    packet_list_model_->invalidateAllColumnStrings();
 }
 
 void PacketList::freeze()
@@ -1002,6 +1060,7 @@ QString PacketList::getFilterFromRowAndColumn()
              */
             if (strlen(cap_file_->cinfo.col_expr.col_expr[ctx_column_]) != 0 &&
                 strlen(cap_file_->cinfo.col_expr.col_expr_val[ctx_column_]) != 0) {
+                gboolean is_string_value = FALSE;
                 if (cap_file_->cinfo.columns[ctx_column_].col_fmt == COL_CUSTOM) {
                     header_field_info *hfi = proto_registrar_get_byname(cap_file_->cinfo.columns[ctx_column_].col_custom_fields);
                     if (hfi && hfi->parent == -1) {
@@ -1009,15 +1068,26 @@ QString PacketList::getFilterFromRowAndColumn()
                         filter.append(cap_file_->cinfo.col_expr.col_expr[ctx_column_]);
                     } else if (hfi && hfi->type == FT_STRING) {
                         /* Custom string, add quotes */
+                        is_string_value = TRUE;
+                    }
+                } else {
+                    header_field_info *hfi = proto_registrar_get_byname(cap_file_->cinfo.col_expr.col_expr[ctx_column_]);
+                    if (hfi && hfi->type == FT_STRING) {
+                        /* Could be an address type such as usb.src which must be quoted. */
+                        is_string_value = TRUE;
+                    }
+                }
+
+                if (filter.isEmpty()) {
+                    if (is_string_value) {
                         filter.append(QString("%1 == \"%2\"")
                                       .arg(cap_file_->cinfo.col_expr.col_expr[ctx_column_])
                                       .arg(cap_file_->cinfo.col_expr.col_expr_val[ctx_column_]));
+                    } else {
+                        filter.append(QString("%1 == %2")
+                                      .arg(cap_file_->cinfo.col_expr.col_expr[ctx_column_])
+                                      .arg(cap_file_->cinfo.col_expr.col_expr_val[ctx_column_]));
                     }
-                }
-                if (filter.isEmpty()) {
-                    filter.append(QString("%1 == %2")
-                                  .arg(cap_file_->cinfo.col_expr.col_expr[ctx_column_])
-                                  .arg(cap_file_->cinfo.col_expr.col_expr_val[ctx_column_]));
                 }
             }
         }
@@ -1618,10 +1688,7 @@ void PacketList::drawNearOverlay()
 
     if (!prefs.gui_packet_list_show_minimap) return;
 
-    qreal dp_ratio = 1.0;
-#if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
-    dp_ratio = overlay_sb_->devicePixelRatio();
-#endif
+    qreal dp_ratio = overlay_sb_->devicePixelRatio();
     int o_height = overlay_sb_->height() * dp_ratio;
     int o_rows = qMin(packet_list_model_->rowCount(), o_height);
     int o_width = (wsApp->fontMetrics().height() * 2 * dp_ratio) + 2; // 2ems + 1-pixel border on either side.
@@ -1690,11 +1757,8 @@ void PacketList::drawFarOverlay()
     if (!prefs.gui_packet_list_show_minimap) return;
 
     QSize groove_size = overlay_sb_->grooveRect().size();
-#if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
-    qreal dp_ratio = 1.0;
-    dp_ratio = overlay_sb_->devicePixelRatio();
+    qreal dp_ratio = overlay_sb_->devicePixelRatio();
     groove_size *= dp_ratio;
-#endif
     int o_width = groove_size.width();
     int o_height = groove_size.height();
     int pl_rows = packet_list_model_->rowCount();

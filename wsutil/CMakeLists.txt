@@ -4,19 +4,7 @@
 # By Gerald Combs <gerald@wireshark.org>
 # Copyright 1998 Gerald Combs
 #
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+# SPDX-License-Identifier: GPL-2.0-or-later
 #
 
 include(UseABICheck)
@@ -51,12 +39,13 @@ set(WSUTIL_PUBLIC_HEADERS
 	filesystem.h
 	frequency-utils.h
 	g711.h
-	glib-compat.h
 	inet_addr.h
+	inet_ipv4.h
 	inet_ipv6.h
 	interface.h
 	jsmn.h
 	mpeg-audio.h
+	netlink.h
 	nstime.h
 	os_version_info.h
 	pint.h
@@ -81,13 +70,12 @@ set(WSUTIL_PUBLIC_HEADERS
 	ws_mempbrk_int.h
 	ws_pipe.h
 	ws_printf.h
-	wsjsmn.h
+	wsjson.h
 	xtea.h
 )
 
 set(WSUTIL_COMMON_FILES
 	adler32.c
-	airpdcap_wep.c
 	base32.c
 	base64.c
 	bitswap.c
@@ -104,11 +92,11 @@ set(WSUTIL_COMMON_FILES
 	crc7.c
 	crc8.c
 	crc11.c
+	dot11decrypt_wep.c
 	eax.c
 	filesystem.c
 	frequency-utils.c
 	g711.c
-	glib-compat.c
 	inet_addr.c
 	interface.c
 	jsmn.c
@@ -130,7 +118,7 @@ set(WSUTIL_COMMON_FILES
 	ws_mempbrk.c
 	ws_pipe.c
 	wsgcrypt.c
-	wsjsmn.c
+	wsjson.c
 	xtea.c
 )
 
@@ -219,10 +207,6 @@ if(NOT HAVE_GETOPT_LONG)
 	list(APPEND WSUTIL_FILES getopt_long.c)
 endif()
 
-if(NOT HAVE_POPCOUNT)
-	list(APPEND WSUTIL_FILES popcount.c)
-endif()
-
 if(NOT HAVE_STRPTIME)
 	list(APPEND WSUTIL_FILES strptime.c)
 endif()
@@ -245,6 +229,11 @@ set(wsutil_LIBS
 	${WIN_WSOCK32_LIBRARY}
 	${GNUTLS_LIBRARIES}
 )
+
+IF(HAVE_JSONGLIB)
+	list(APPEND wsutil_LIBS ${JSONGLIB_LIBRARIES})
+ENDIF()
+
 IF(WIN32)
 	set(wsutil_LIBS ${wsutil_LIBS} "iphlpapi.lib" "ws2_32.lib")
 ENDIF(WIN32)
@@ -269,20 +258,26 @@ add_library(wsutil
 	${CMAKE_BINARY_DIR}/image/libwsutil.rc
 )
 
-set(FULL_SO_VERSION "0.0.0")
-
 set_target_properties(wsutil PROPERTIES
 	PREFIX "lib"
 	COMPILE_DEFINITIONS "WS_BUILD_DLL"
 	LINK_FLAGS "${WS_LINK_FLAGS}"
-	VERSION ${FULL_SO_VERSION} SOVERSION 0
+	VERSION "0.0.0" SOVERSION 0
 	FOLDER "DLLs"
 )
 
 if(ENABLE_APPLICATION_BUNDLE)
-	set_target_properties(wsutil PROPERTIES
-		LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/run/Wireshark.app/Contents/Frameworks
-	)
+
+	if(NOT CMAKE_CFG_INTDIR STREQUAL ".")
+		# Xcode
+		set_target_properties(wsutil PROPERTIES
+			LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/run/$<CONFIG>/Wireshark.app/Contents/Frameworks
+		)
+	else()
+		set_target_properties(wsutil PROPERTIES
+			LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/run/Wireshark.app/Contents/Frameworks
+		)
+	endif()
 endif()
 
 ABICHECK(libwsutil)

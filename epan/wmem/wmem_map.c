@@ -28,7 +28,7 @@ void
 wmem_init_hashing(void)
 {
     x = g_random_int();
-    if G_UNLIKELY(x == 0)
+    if (G_UNLIKELY(x == 0))
         x = 1;
 
     preseed  = g_random_int();
@@ -68,7 +68,7 @@ struct _wmem_map_t {
 
 /* Macro for calculating the real capacity of the map by using a left-shift to
  * do the 2^x operation. */
-#define CAPACITY(MAP) ((size_t)(1 << (MAP)->capacity))
+#define CAPACITY(MAP) (((size_t)1) << (MAP)->capacity)
 
 /* Efficient universal integer hashing:
  * https://en.wikipedia.org/wiki/Universal_hashing#Avoiding_modular_arithmetic

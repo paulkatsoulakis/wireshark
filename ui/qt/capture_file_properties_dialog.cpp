@@ -6,7 +6,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "capture_file_properties_dialog.h"
 #include <ui_capture_file_properties_dialog.h>
@@ -36,6 +37,10 @@ CaptureFilePropertiesDialog::CaptureFilePropertiesDialog(QWidget &parent, Captur
     loadGeometry(parent.width() * 2 / 3, parent.height());
 
     ui->detailsTextEdit->setAcceptRichText(true);
+
+    // make the details box larger than the comments
+    ui->splitter->setStretchFactor(0, 6);
+    ui->splitter->setStretchFactor(1, 1);
 
     QPushButton *button = ui->buttonBox->button(QDialogButtonBox::Reset);
     if (button) {

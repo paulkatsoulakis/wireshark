@@ -166,6 +166,21 @@ extern value_string_ext gmr1_ie_rr_strings_ext;
 extern elem_fcn gmr1_ie_rr_func[];
 extern gint ett_gmr1_ie_rr[];
 
+extern value_string_ext nas_5gs_common_elem_strings_ext;
+extern gint ett_nas_5gs_common_elem[];
+extern elem_fcn nas_5gs_common_elem_fcn[];
+extern int hf_nas_5gs_common_elem_id;
+
+extern value_string_ext nas_5gs_mm_elem_strings_ext;
+extern gint ett_nas_5gs_mm_elem[];
+extern elem_fcn nas_5gs_mm_elem_fcn[];
+extern int hf_nas_5gs_mm_elem_id;
+
+extern value_string_ext nas_5gs_sm_elem_strings_ext;
+extern gint ett_nas_5gs_sm_elem[];
+extern elem_fcn nas_5gs_sm_elem_fcn[];
+extern int hf_nas_5gs_sm_elem_id;
+
 extern sccp_assoc_info_t* sccp_assoc;
 
 extern int gsm_a_tap;
@@ -206,6 +221,9 @@ extern int hf_gsm_a_lac;
 #define BSSGP_PDU_TYPE              13
 #define GMR1_IE_COMMON              14
 #define GMR1_IE_RR                  15
+#define NAS_5GS_PDU_TYPE_COMMON     16
+#define NAS_5GS_PDU_TYPE_MM         17
+#define NAS_5GS_PDU_TYPE_SM         18
 
 extern const char* get_gsm_a_msg_string(int pdu_type, int idx);
 
@@ -313,6 +331,21 @@ extern const char* get_gsm_a_msg_string(int pdu_type, int idx);
         SEV_elem_names_ext = gmr1_ie_rr_strings_ext; \
         SEV_elem_ett = ett_gmr1_ie_rr; \
         SEV_elem_funcs = gmr1_ie_rr_func; \
+        break; \
+    case NAS_5GS_PDU_TYPE_COMMON: \
+        SEV_elem_names_ext = nas_5gs_common_elem_strings_ext; \
+        SEV_elem_ett = ett_nas_5gs_common_elem; \
+        SEV_elem_funcs = nas_5gs_common_elem_fcn; \
+        break; \
+    case NAS_5GS_PDU_TYPE_MM: \
+        SEV_elem_names_ext = nas_5gs_mm_elem_strings_ext; \
+        SEV_elem_ett = ett_nas_5gs_mm_elem; \
+        SEV_elem_funcs = nas_5gs_mm_elem_fcn; \
+        break; \
+    case NAS_5GS_PDU_TYPE_SM: \
+        SEV_elem_names_ext = nas_5gs_sm_elem_strings_ext; \
+        SEV_elem_ett = ett_nas_5gs_sm_elem; \
+        SEV_elem_funcs = nas_5gs_sm_elem_fcn; \
         break; \
     default: \
         proto_tree_add_expert_format(tree, pinfo, ei_unknown, \
@@ -749,6 +782,10 @@ guint16 de_emm_sec_par_to_eutra(tvbuff_t *tvb, proto_tree *tree, packet_info *pi
 guint16 de_esm_qos(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo _U_, guint32 offset, guint len, gchar *add_string _U_, int string_len _U_);
 void nas_esm_pdn_con_req(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, guint32 offset, guint len);
 
+guint16 de_nas_5gs_cmn_s_nssai(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo _U_, guint32 offset, guint len, gchar *add_string _U_, int string_len _U_);
+guint16 de_nas_5gs_sm_qos_rules(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, guint32 offset, guint len, gchar *add_string _U_, int string_len _U_);
+guint16 de_nas_5gs_sm_session_ambr(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo _U_, guint32 offset, guint len, gchar *add_string _U_, int string_len _U_);
+
 void dtap_rr_ho_cmd(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, guint32 offset, guint len);
 void dtap_rr_cip_mode_cpte(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, guint32 offset, guint len);
 
@@ -792,6 +829,8 @@ extern const value_string gsm_a_gm_type_of_ciph_alg_vals[];
 extern value_string_ext nas_eps_emm_cause_values_ext;
 extern const value_string nas_eps_emm_cause_values[];
 extern const value_string nas_eps_esm_cause_vals[];
+
+extern const value_string nas_5gs_pdu_session_id_vals[];
 
 typedef enum
 {
@@ -1439,7 +1478,8 @@ typedef enum
     DE_EMM_UE_NET_CAP,          /* 9.9.3.34 UE network capability */
     DE_EMM_UE_RA_CAP_INF_UPD_NEED,  /* 9.9.3.35 UE radio capability information update needed */
     DE_EMM_UE_SEC_CAP,          /* 9.9.3.36 UE security capability */
-    DE_EMM_EMERG_NUM_LST,       /* 9.9.3.37 Emergency Number List */
+    DE_EMM_EMERG_NUM_LIST,      /* 9.9.3.37 Emergency Number List */
+    DE_EMM_EXT_EMERG_NUM_LIST,  /* 9.9.3.37a Extended Emergency Number List */
     DE_EMM_CLI,                 /* 9.9.3.38 CLI */
     DE_EMM_SS_CODE,             /* 9.9.3.39 SS Code */
     DE_EMM_LCS_IND,             /* 9.9.3.40 LCS indicator */
@@ -1456,9 +1496,52 @@ typedef enum
     DE_EMM_REPLAYED_NAS_MSG_CONT, /* 9.9.3.51 Replayed NAS message container */
     DE_EMM_NETWORK_POLICY,      /* 9.9.3.52 Network policy */
     DE_EMM_UE_ADD_SEC_CAP,      /* 9.9.3.53 UE additional security capability */
+    DE_EMM_UE_STATUS,           /* 9.9.3.54 UE status */
+    DE_EMM_ADD_INFO_REQ,        /* 9.9.3.55 Additional information requested */
+    DE_EMM_CIPH_KEY_DATA,       /* 9.9.3.56 Ciphering key data */
     DE_EMM_NONE                 /* NONE */
 }
 nas_emm_elem_idx_t;
+
+/* 9.9.4 EPS Session Management (ESM) information elements */
+typedef enum
+{
+    DE_ESM_APN,                     /* 9.9.4.1 Access point name */
+    DE_ESM_APN_AGR_MAX_BR,          /* 9.9.4.2 APN aggregate maximum bit rate */
+    DE_ESM_CONNECTIVITY_TYPE,       /* 9.9.4.2A Connectivity type */
+    DE_ESM_EPS_QOS,                 /* 9.9.4.3 EPS quality of service */
+    DE_ESM_CAUSE,                   /* 9.9.4.4 ESM cause */
+    DE_ESM_INF_TRF_FLG,             /* 9.9.4.5 ESM information transfer flag */
+    DE_ESM_LNKED_EPS_B_ID,          /* 9.9.4.6 Linked EPS bearer identity  */
+    DE_ESM_LLC_SAPI,                /* 9.9.4.7 LLC service access point identifier */
+    DE_ESM_NOTIF_IND,               /* 9.9.4.7a Notification indicator */
+    DE_ESM_P_FLW_ID,                /* 9.9.4.8 Packet flow identifier  */
+    DE_ESM_PDN_ADDR,                /* 9.9.4.9 PDN address */
+    DE_ESM_PDN_TYPE,                /* 9.9.4.10 PDN type */
+    DE_ESM_PROT_CONF_OPT,           /* 9.9.4.11 Protocol configuration options */
+    DE_ESM_QOS,                     /* 9.9.4.12 Quality of service */
+    DE_ESM_RA_PRI,                  /* 9.9.4.13 Radio priority  */
+    DE_ESM_RE_ATTEMPT_IND,          /* 9.9.4.13a Re-attempt indicator */
+    DE_ESM_REQ_TYPE,                /* 9.9.4.14 Request type */
+    DE_ESM_TRAF_FLOW_AGR_DESC,      /* 9.9.4.15 Traffic flow aggregate description */
+    DE_ESM_TRAF_FLOW_TEMPL,         /* 9.9.4.16 Traffic flow template */
+    DE_ESM_TID,                     /* 9.9.4.17 Transaction identifier */
+    DE_ESM_WLAN_OFFLOAD_ACCEPT,     /* 9.9.4.18 WLAN offload acceptability */
+    DE_ESM_NBIFOM_CONT,             /* 9.9.4.19 NBIFOM container */
+    DE_ESM_REMOTE_UE_CONTEXT_LIST,  /* 9.9.4.20 Remote UE context list */
+    DE_ESM_PKMF_ADDRESS,            /* 9.9.4.21 PKMF address */
+    DE_ESM_HDR_COMPR_CONFIG,        /* 9.9.4.22 Header compression configuration */
+    DE_ESM_CTRL_PLANE_ONLY_IND,     /* 9.9.4.23 Control plane only indication */
+    DE_ESM_USER_DATA_CONT,          /* 9.9.4.24 User data container */
+    DE_ESM_REL_ASSIST_IND,          /* 9.9.4.25 Release assistance indication */
+    DE_ESM_EXT_PCO,                 /* 9.9.4.26 Extended protocol configuration options */
+    DE_ESM_HDR_COMPR_CONFIG_STATUS, /* 9.9.4.27 Header compression configuration status */
+    DE_ESM_SERV_PLMN_RATE_CTRL,     /* 9.9.4.28 Serving PLMN rate control */
+    DE_ESM_EXT_APN_AGR_MAX_BR,      /* 9.9.4.29 Extended APN aggregate maximum bit rate */
+    DE_ESM_EXT_EPS_QOS,             /* 9.9.4.30 Extended EPS quality of service */
+    DE_ESM_NONE                     /* NONE */
+}
+nas_esm_elem_idx_t;
 
 typedef enum
 {
@@ -1509,6 +1592,66 @@ typedef enum
     DE_SGAP_NONE                            /* NONE */
 }
 sgsap_elem_idx_t;
+
+typedef enum
+{
+    DE_NAS_5GS_MM_5GMM_CAP,                  /* 9.10.3.1     5GMM capability*/
+    DE_NAS_5GS_MM_5GMM_CAUSE,                /* 9.10.3.2     5GMM cause*/
+    DE_NAS_5GS_MM_5GS_IDENTITY_TYPE,         /* 9.10.3.3     5GS identity type*/
+    DE_NAS_5GS_MM_5GS_MOBILE_ID,             /* 9.10.3.4     5GS mobile identity*/
+    DE_NAS_5GS_MM_5GS_NW_FEAT_SUP,           /* 9.10.3.5     5GS network feature support*/
+    DE_NAS_5GS_MM_5GS_REG_RES,               /* 9.10.3.6     5GS registration result*/
+    DE_NAS_5GS_MM_5GS_REG_TYPE,              /* 9.10.3.7     5GS registration type*/
+    DE_NAS_5GS_MM_5GS_TA_ID,                 /* 9.10.3.8     5GS tracking area identity */
+    DE_NAS_5GS_MM_5GS_TA_ID_LIST,            /* 9.10.3.9     5GS tracking area identity list */
+    DE_NAS_5GS_MM_ACCESS_TYPE,               /* 9.10.3.10    Access type */
+    DE_NAS_5GS_MM_ALLOW_PDU_SES_STS,         /* 9.10.3.11    Allowed PDU session status*/
+    DE_NAS_5GS_MM_AUT_FAIL_PAR,              /* 9.10.3.12    Authentication failure parameter */
+    DE_NAS_5GS_MM_AUT_PAR_AUTN,              /* 9.10.3.13    Authentication parameter AUTN*/
+    DE_NAS_5GS_MM_AUT_PAR_RAND,              /* 9.10.3.14    Authentication parameter RAND*/
+    DE_NAS_5GS_MM_AUT_RESP_PAR,              /* 9.10.3.15    Authentication response parameter */
+    DE_NAS_5GS_MM_CONF_UPD_IND,              /* 9.10.3.16    Configuration update indication*/
+    DE_NAS_5GS_MM_DLGT_SAVING_TIME,          /* 9.10.3.17    Daylight saving time*/
+    DE_NAS_5GS_MM_DE_REG_TYPE,               /* 9.10.3.18    De-registration type*/
+    DE_NAS_5GS_MM_DNN,                       /* 9.10.3.19    DNN*/
+    DE_NAS_5GS_MM_DRX_PAR,                   /* 9.10.3.20    DRX parameters */
+    DE_NAS_5GS_MM_EMRG_NR_LIST,              /* 9.10.3.21    Emergency number list */
+    DE_NAS_5GS_MM_EPS_NAS_MSG_CONT,          /* 9.10.3.22    EPS NAS message container */
+    DE_NAS_5GS_MM_EPS_NAS_SEC_ALGO,          /* 9.10.3.23    EPS NAS security algorithms */
+    DE_NAS_5GS_MM_EXT_EMERG_NUM_LIST,        /* 9.10.3.24    Extended emergency number list */
+    DE_NAS_5GS_MM_HASHAMF,                   /* 9.10.3.25    HashAMF*/
+    DE_NAS_5GS_MM_IMEISV_REQ,                /* 9.10.3.26    IMEISV request*/
+    DE_NAS_5GS_MM_LADN_INF,                  /* 9.10.3.27    LADN information*/
+    DE_NAS_5GS_MM_MICO_IND,                  /* 9.10.3.28    MICO indication*/
+    DE_NAS_5GS_MM_NAS_KEY_SET_ID,            /* 9.10.3.29    NAS key set identifier*/
+    DE_NAS_5GS_MM_NAS_MSG,                   /* 9.10.3.30    NAS message */
+    DE_NAS_5GS_MM_NAS_MSG_CONT,              /* 9.10.3.31    NAS message container*/
+    DE_NAS_5GS_MM_NAS_SEC_ALGO,              /* 9.10.3.32    NAS security algorithms*/
+    DE_NAS_5GS_MM_NW_NAME,                   /* 9.10.3.33    Network name*/
+    DE_NAS_5GS_MM_NSSAI,                     /* 9.10.3.34    NSSAI*/
+    DE_NAS_5GS_MM_PLD_CONT,                  /* 9.10.3.35    Payload container*/
+    DE_NAS_5GS_MM_PLD_CONT_TYPE,             /* 9.10.3.36    Payload container type*/
+    DE_NAS_5GS_MM_PDU_SES_ID_2,              /* 9.10.3.37    PDU session identity 2 */
+    DE_NAS_5GS_MM_PDU_SES_REACT_RES,         /* 9.10.3.38    PDU session reactivation result*/
+    DE_NAS_5GS_MM_PDU_SES_REACT_RES_ERR_C,   /* 9.10.3.39    PDU session reactivation result error cause */
+    DE_NAS_5GS_MM_PDU_SES_STATUS,            /* 9.10.3.40    PDU session status */
+    DE_NAS_5GS_MM_PLMN_LIST,                 /* 9.10.3.41    PLMN list*/
+    DE_NAS_5GS_MM_REJ_NSSAI,                 /* 9.10.3.42    Rejected NSSAI*/
+    DE_NAS_5GS_MM_REQ_TYPE,                  /* 9.10.3.43    Request type */
+    DE_NAS_5GS_MM_S1_UE_NW_CAP,              /* 9.10.3.44    S1 UE network capability*/
+    DE_NAS_5GS_MM_SAL,                       /* 9.10.3.45    Service area list*/
+    DE_NAS_5GS_MM_SERV_TYPE,                 /* 9.10.3.46    Service type*/
+    DE_NAS_5GS_MM_TZ,                        /* 9.10.3.47    Time zone*/
+    DE_NAS_5GS_MM_TZ_AND_T,                  /* 9.10.3.48    Time zone and time*/
+    DE_NAS_5GS_MM_TRANSP_CONT,               /* 9.10.3.49    Transparent container */
+    DE_NAS_5GS_MM_UE_SEC_CAP,                /* 9.10.3.50    UE security capability*/
+    DE_NAS_5GS_MM_UE_USAGE_SET,              /* 9.10.3.51    UE's usage setting */
+    DE_NAS_5GS_MM_UE_STATUS,                 /* 9.10.3.52    UE status */
+    DE_NAS_5GS_MM_UL_DATA_STATUS,            /* 9.10.3.53    Uplink data status */
+    DE_NAS_5GS_MM_NONE        /* NONE */
+}
+nas_5gs_mm_elem_idx_t;
+
 
 #endif /* __PACKET_GSM_A_COMMON_H__ */
 

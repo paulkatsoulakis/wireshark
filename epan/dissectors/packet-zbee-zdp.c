@@ -17,6 +17,7 @@
 #include <wsutil/bits_ctz.h>
 
 #include "packet-zbee.h"
+#include "packet-zbee-aps.h"
 #include "packet-zbee-nwk.h"
 #include "packet-zbee-zdp.h"
 
@@ -111,6 +112,8 @@ static int hf_zbee_zdp_power_level = -1;
 
 /* Simple descriptor indicies. */
 static int hf_zbee_zdp_simple_app_device = -1;
+static int hf_zbee_zdp_simple_zll_app_device = -1;
+static int hf_zbee_zdp_simple_ha_app_device = -1;
 static int hf_zbee_zdp_simple_app_version = -1;
        int hf_zbee_zdp_simple_length = -1;
 
@@ -151,6 +154,8 @@ static int hf_zbee_zdp_complex = -1;
        int hf_zbee_zdp_manager = -1;
        int hf_zbee_zdp_tx_total = -1;
        int hf_zbee_zdp_tx_fail = -1;
+       int hf_zbee_zdp_tx_retries = -1;
+       int hf_zbee_zdp_period_time_results = -1;
        int hf_zbee_zdp_channel_count = -1;
        int hf_zbee_zdp_channel_mask = -1;
        int hf_zbee_zdp_channel_page = -1;
@@ -277,6 +282,7 @@ const value_string zbee_zdp_cluster_names[] = {
     { ZBEE_ZDP_REQ_MGMT_NWKUPDATE,                "Network Update Request" },
     { ZBEE_ZDP_REQ_MGMT_NWKUPDATE_ENH,            "Network Update Enhanced Request" },
     { ZBEE_ZDP_REQ_MGMT_IEEE_JOIN_LIST,           "IEEE Joining List Request" },
+    { ZBEE_ZDP_REQ_MGMT_UNSOLICITED_NWKUPDATE,    "Unsolicited Enhanced Network Update Notify" },
 
     { ZBEE_ZDP_RSP_NWK_ADDR,                      "Network Address Response" },
     { ZBEE_ZDP_RSP_IEEE_ADDR,                     "Extended Address Response" },
@@ -320,6 +326,7 @@ const value_string zbee_zdp_cluster_names[] = {
     { ZBEE_ZDP_RSP_MGMT_PERMIT_JOIN,              "Permit Join Response" },
     { ZBEE_ZDP_RSP_MGMT_CACHE,                    "Cache Response" },
     { ZBEE_ZDP_RSP_MGMT_NWKUPDATE,                "Network Update Notify" },
+    { ZBEE_ZDP_RSP_MGMT_NWKUPDATE_ENH,            "Network Enhanced Update Notify" },
     { ZBEE_ZDP_RSP_MGMT_IEEE_JOIN_LIST,           "IEEE Joining List Response" },
     { 0, NULL }
 };
@@ -341,6 +348,48 @@ static const value_string zbee_zdp_status_names[] = {
     { ZBEE_ZDP_STATUS_NOT_AUTHORIZED,             "Not Authorized" },
     { ZBEE_ZDP_STATUS_DEVICE_BINDING_TABLE_FULL,  "Device Binding Table Full" },
     { ZBEE_ZDP_STATUS_INVALID_INDEX,              "Invalid Index" },
+    { 0, NULL }
+};
+
+static const value_string zbee_zll_device_names[] = {
+    { ZBEE_ZLL_DEVICE_ON_OFF_LIGHT,               "On/Off light" },
+    { ZBEE_ZLL_DEVICE_ON_OFF_PLUG_IN_UNIT,        "On/Off plug-in unit" },
+    { ZBEE_ZLL_DEVICE_DIMMABLE_LIGHT,             "Dimmable light" },
+    { ZBEE_ZLL_DEVICE_DIMMABLE_PLUG_IN_UNIT,      "Dimmable plug-in unit" },
+    { ZBEE_ZLL_DEVICE_COLOR_LIGHT,                "Color light" },
+    { ZBEE_ZLL_DEVICE_EXTENDED_COLOR_LIGHT,       "Extended color light" },
+    { ZBEE_ZLL_DEVICE_COLOR_TEMPERATURE_LIGHT,    "Color temperature light" },
+    { ZBEE_ZLL_DEVICE_COLOR_CONTROLLER,           "Color controller" },
+    { ZBEE_ZLL_DEVICE_COLOR_SCENE_CONTROLLER,     "Color scene controller" },
+    { ZBEE_ZLL_DEVICE_NON_COLOR_CONTROLLER,       "Non-color controller" },
+    { ZBEE_ZLL_DEVICE_NON_COLOR_SCENE_CONTROLLER, "Non-color scene controller" },
+    { ZBEE_ZLL_DEVICE_CONTROL_BRIDGE,             "Control Bridge" },
+    { ZBEE_ZLL_DEVICE_ON_OFF_SENSOR,              "On/Off sensor" },
+    { 0, NULL }
+};
+
+static const value_string zbee_ha_device_names[] = {
+    { ZBEE_HA_DEVICE_ON_OFF_LIGHT,               "On/Off light" },
+    { ZBEE_HA_DEVICE_DIMMABLE_LIGHT,             "Dimmable light" },
+    { ZBEE_HA_DEVICE_COLOR_DIMMABLE_LIGHT,       "Color dimmable light" },
+    { ZBEE_HA_DEVICE_ON_OFF_LIGHT_SWITCH,        "On/Off light switch" },
+    { ZBEE_HA_DEVICE_DIMMER_SWITCH,              "Dimmer switch" },
+    { ZBEE_HA_DEVICE_COLOR_DIMMER_SWITCH,        "Color dimmer switch" },
+    { ZBEE_HA_DEVICE_LIGHT_SENSOR,               "Light sensor" },
+    { ZBEE_HA_DEVICE_OCCUPANCY_SENSOR,           "Occupancy sensor" },
+    { ZBEE_HA_DEVICE_ON_OFF_BALLAST,             "On/Off ballast" },
+    { ZBEE_HA_DEVICE_DIMMABLE_BALLAST,           "Dimmable ballast" },
+    { ZBEE_HA_DEVICE_ON_OFF_PLUG_IN_UNIT,        "On/Off plug-in unit" },
+    { ZBEE_HA_DEVICE_DIMMABLE_PLUG_IN_UNIT,      "Dimmable plug-in unit" },
+    { ZBEE_HA_DEVICE_COLOR_TEMPERATURE_LIGHT,    "Color temperature light" },
+    { ZBEE_HA_DEVICE_EXTENDED_COLOR_LIGHT,       "Extended color light" },
+    { ZBEE_HA_DEVICE_LIGHT_LEVEL_SENSOR,         "Light level sensor" },
+    { ZBEE_HA_DEVICE_COLOR_CONTROLLER,           "Color controller" },
+    { ZBEE_HA_DEVICE_COLOR_SCENE_CONTROLLER,     "Color scene controller" },
+    { ZBEE_HA_DEVICE_NON_COLOR_CONTROLLER,       "Non-color controller" },
+    { ZBEE_HA_DEVICE_NON_COLOR_SCENE_CONTROLLER, "Non-color scene controller" },
+    { ZBEE_HA_DEVICE_CONTROL_BRIDGE,             "Control Bridge" },
+    { ZBEE_HA_DEVICE_ON_OFF_SENSOR,              "On/Off sensor" },
     { 0, NULL }
 };
 
@@ -811,6 +860,8 @@ zdp_parse_simple_desc(proto_tree *tree, gint ettindex, tvbuff_t *tvb, guint *off
     proto_tree  *field_tree = NULL, *cluster_tree = NULL;
     guint       i, sizeof_cluster;
 
+    int         hf_app_device;
+    guint32     profile;
     guint32     in_count, out_count;
 
     if ((tree) && (ettindex != -1)) {
@@ -820,10 +871,19 @@ zdp_parse_simple_desc(proto_tree *tree, gint ettindex, tvbuff_t *tvb, guint *off
 
     proto_tree_add_item(field_tree, hf_zbee_zdp_endpoint, tvb, *offset, 1, ENC_LITTLE_ENDIAN);
     *offset += 1;
-    proto_tree_add_item(field_tree, hf_zbee_zdp_profile, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
+
+    proto_tree_add_item_ret_uint(field_tree, hf_zbee_zdp_profile, tvb, *offset, 2, ENC_LITTLE_ENDIAN, &profile);
     *offset += 2;
-    proto_tree_add_item(field_tree, hf_zbee_zdp_simple_app_device, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
+
+    switch (profile)
+    {
+    case ZBEE_PROFILE_ZLL: hf_app_device = hf_zbee_zdp_simple_zll_app_device; break;
+    case ZBEE_PROFILE_HA:  hf_app_device = hf_zbee_zdp_simple_ha_app_device;  break;
+    default:               hf_app_device = hf_zbee_zdp_simple_app_device;     break;
+    }
+    proto_tree_add_item(field_tree, hf_app_device, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
     *offset += 2;
+
     proto_tree_add_item(field_tree, hf_zbee_zdp_simple_app_version, tvb, *offset, 1, ENC_LITTLE_ENDIAN);
     *offset += 1;
 
@@ -831,6 +891,7 @@ zdp_parse_simple_desc(proto_tree *tree, gint ettindex, tvbuff_t *tvb, guint *off
 
     proto_tree_add_item_ret_uint(field_tree, hf_zbee_zdp_in_count, tvb, *offset, 1, ENC_LITTLE_ENDIAN, &in_count);
     *offset += 1;
+
     if ((tree) && (in_count)) {
         cluster_tree = proto_tree_add_subtree(field_tree, tvb, *offset, in_count*sizeof_cluster,
                                                 ett_zbee_zdp_node_in, NULL, "Input Cluster List");
@@ -1129,6 +1190,9 @@ dissect_zbee_zdp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
         case ZBEE_ZDP_REQ_MGMT_IEEE_JOIN_LIST:
             dissect_zbee_zdp_req_mgmt_ieee_join_list(zdp_tvb, pinfo, zdp_tree);
             break;
+        case ZBEE_ZDP_REQ_MGMT_UNSOLICITED_NWKUPDATE:
+            dissect_zbee_zdp_req_mgmt_unsolicited_nwkupdate(zdp_tvb, pinfo, zdp_tree);
+            break;
         case ZBEE_ZDP_RSP_NWK_ADDR:
             dissect_zbee_zdp_rsp_nwk_addr(zdp_tvb, pinfo, zdp_tree);
             break;
@@ -1253,6 +1317,7 @@ dissect_zbee_zdp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
             dissect_zbee_zdp_rsp_mgmt_cache(zdp_tvb, pinfo, zdp_tree);
             break;
         case ZBEE_ZDP_RSP_MGMT_NWKUPDATE:
+        case ZBEE_ZDP_RSP_MGMT_NWKUPDATE_ENH:
             dissect_zbee_zdp_rsp_mgmt_nwkupdate(zdp_tvb, pinfo, zdp_tree);
             break;
         case ZBEE_ZDP_RSP_MGMT_IEEE_JOIN_LIST:
@@ -1313,7 +1378,7 @@ void proto_register_zbee_zdp(void)
             NULL, HFILL }},
 
         { &hf_zbee_zdp_profile,
-        { "Profile",                    "zbee_zdp.profile", FT_UINT16, BASE_HEX, NULL, 0x0,
+        { "Profile",                    "zbee_zdp.profile", FT_UINT16, BASE_HEX | BASE_RANGE_STRING, RVALS(zbee_aps_apid_names), 0x0,
             NULL, HFILL }},
 
         { &hf_zbee_zdp_addr_mode,
@@ -1345,11 +1410,11 @@ void proto_register_zbee_zdp(void)
             NULL, HFILL }},
 
         { &hf_zbee_zdp_in_cluster,
-        { "Input Cluster",              "zbee_zdp.in_cluster", FT_UINT16, BASE_HEX, NULL, 0x0,
+        { "Input Cluster",              "zbee_zdp.in_cluster", FT_UINT16, BASE_HEX, VALS(zbee_aps_cid_names), 0x0,
             NULL, HFILL }},
 
         { &hf_zbee_zdp_out_cluster,
-        { "Output Cluster",             "zbee_zdp.out_cluster", FT_UINT16, BASE_HEX, NULL, 0x0,
+        { "Output Cluster",             "zbee_zdp.out_cluster", FT_UINT16, BASE_HEX, VALS(zbee_aps_cid_names), 0x0,
             NULL, HFILL }},
 
         { &hf_zbee_zdp_assoc_device_count,
@@ -1520,6 +1585,14 @@ void proto_register_zbee_zdp(void)
         { "Application Device",         "zbee_zdp.app.device", FT_UINT16, BASE_HEX, NULL, 0x0,
             NULL, HFILL }},
 
+        { &hf_zbee_zdp_simple_zll_app_device,
+        { "Application Device",         "zbee_zdp.app.device", FT_UINT16, BASE_HEX, VALS(zbee_zll_device_names), 0x0,
+            NULL, HFILL }},
+
+        { &hf_zbee_zdp_simple_ha_app_device,
+        { "Application Device",         "zbee_zdp.app.device", FT_UINT16, BASE_HEX, VALS(zbee_ha_device_names), 0x0,
+            NULL, HFILL }},
+
         { &hf_zbee_zdp_simple_app_version,
         { "Application Version",        "zbee_zdp.app.version", FT_UINT16, BASE_HEX, NULL, 0x0,
             NULL, HFILL }},
@@ -1638,6 +1711,14 @@ void proto_register_zbee_zdp(void)
 
         { &hf_zbee_zdp_tx_fail,
         { "Failed Transmissions",       "zbee_zdp.tx_fail", FT_UINT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }},
+
+        { &hf_zbee_zdp_tx_retries,
+        { "Retried Transmissions",       "zbee_zdp.tx_retries", FT_UINT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }},
+
+        { &hf_zbee_zdp_period_time_results,
+        { "Period of Time For Results",  "zbee_zdp.period_time_results", FT_UINT8, BASE_DEC, NULL, 0x0,
             NULL, HFILL }},
 
         { &hf_zbee_zdp_channel_count,

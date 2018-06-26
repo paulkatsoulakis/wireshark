@@ -350,6 +350,14 @@ WS_DLL_PUBLIC
 wmem_map_t *get_ipv6_hash_table(void);
 
 /*
+ * XXX - if we ever have per-session host name etc. information, we
+ * should probably have the "resolve synchronously or asynchronously"
+ * flag be per-session, set with an epan API.
+ */
+WS_DLL_PUBLIC
+void set_resolution_synchrony(gboolean synchronous);
+
+/*
  * private functions (should only be called by epan directly)
  */
 
@@ -380,6 +388,12 @@ gboolean str_to_ip(const char *str, void *dst);
 
 WS_DLL_PUBLIC
 gboolean str_to_ip6(const char *str, void *dst);
+
+WS_DLL_LOCAL
+guint ipv6_oat_hash(gconstpointer key);
+
+WS_DLL_LOCAL
+gboolean ipv6_equal(gconstpointer v1, gconstpointer v2);
 
 #ifdef __cplusplus
 }

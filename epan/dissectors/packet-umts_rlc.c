@@ -11,11 +11,13 @@
 
 #include "config.h"
 
-#include <epan/packet.h>
 #include <epan/conversation.h>
+#include <epan/exceptions.h>
 #include <epan/expert.h>
+#include <epan/packet.h>
 #include <epan/prefs.h>
 #include <epan/proto_data.h>
+#include <epan/show_exception.h>
 
 #include <wiretap/wtap.h>
 
@@ -144,6 +146,8 @@ static expert_field ei_rlc_header_only = EI_INIT;
 static expert_field ei_rlc_ciphered_data = EI_INIT;
 static expert_field ei_rlc_no_per_frame_data = EI_INIT;
 static expert_field ei_rlc_incomplete_sequence = EI_INIT;
+static expert_field ei_rlc_unknown_udp_framing_tag = EI_INIT;
+static expert_field ei_rlc_missing_udp_framing_tag = EI_INIT;
 
 static dissector_handle_t ip_handle;
 static dissector_handle_t rrc_handle;
@@ -468,8 +472,7 @@ rlc_frag_assign_data(struct rlc_frag *frag, tvbuff_t *tvb,
              guint16 offset, guint16 length)
 {
     frag->len  = length;
-    frag->data = (guint8 *)g_malloc(length);
-    tvb_memcpy(tvb, frag->data, offset, length);
+    frag->data = (guint8 *)tvb_memdup(wmem_file_scope(), tvb, offset, length);
     return 0;
 }
 
@@ -846,7 +849,7 @@ reassemble_data(struct rlc_channel *ch, struct rlc_sdu *sdu, struct rlc_frag *fr
     temp = sdu->frags;
     while (temp && ((offs + temp->len) <= sdu->len)) {
         memcpy(sdu->data + offs, temp->data, temp->len);
-        g_free(temp->data);
+        wmem_free(wmem_file_scope(), temp->data);
         temp->data = NULL;
         /* mark this fragment in reassembled table */
         g_hash_table_insert(reassembled_table, temp, sdu);
@@ -1021,7 +1024,7 @@ add_fragment(enum rlc_mode mode, tvbuff_t *tvb, packet_info *pinfo,
     endlist = get_endlist(pinfo, &ch_lookup, atm);
 
     /* If already done reassembly */
-    if (pinfo->fd->flags.visited) {
+    if (PINFO_FD_VISITED(pinfo)) {
         if (tree && len > 0) {
             if (endlist->list && endlist->list->next) {
                 gint16 start = (GPOINTER_TO_INT(endlist->list->data) + 1) % snmod;
@@ -1237,6 +1240,8 @@ rlc_is_duplicate(enum rlc_mode mode, packet_info *pinfo, guint16 seq,
     struct rlc_seqlist  lookup, *list;
     struct rlc_seq      seq_item, *seq_new;
     guint16 snmod;
+    nstime_t delta;
+    gboolean is_duplicate,is_unseen;
 
     if (rlc_channel_assign(&lookup.ch, mode, pinfo, atm) == -1)
         return FALSE;
@@ -1262,33 +1267,49 @@ rlc_is_duplicate(enum rlc_mode mode, packet_info *pinfo, guint16 seq,
         }
     }
 
+    is_duplicate = FALSE;
+    is_unseen = TRUE;
     element = g_list_find_custom(list->list, &seq_item, rlc_cmp_seq);
-    if (element) {
+    while(element) {
+        /* Check if this is a different frame (by comparing frame numbers) which arrived less than */
+        /* RLC_RETRANSMISSION_TIMEOUT seconds ago */
         seq_new = (struct rlc_seq *)element->data;
-        if (seq_new->frame_num != seq_item.frame_num) {
-            nstime_t delta;
+        if (seq_new->frame_num < seq_item.frame_num) {
             nstime_delta(&delta, &pinfo->abs_ts, &seq_new->arrival);
             if (delta.secs < RLC_RETRANSMISSION_TIMEOUT) {
-                if (original)
+                /* This is a duplicate. */
+                if (original) {
+                    /* Save the frame number where our sequence number was previously seen */
                     *original = seq_new->frame_num;
-                return TRUE;
+                }
+                is_duplicate = TRUE;
             }
-            return FALSE;
         }
-        return FALSE; /* we revisit the seq that was already seen */
+        else if (seq_new->frame_num == seq_item.frame_num) {
+            /* Check if our frame is already in the list and this is a secondary check.*/
+            /* in this case raise a flag so the frame isn't entered more than once to the list */
+            is_unseen = FALSE;
+        }
+        element = g_list_find_custom(element->next, &seq_item, rlc_cmp_seq);
     }
-    seq_new = (struct rlc_seq *)wmem_alloc0(wmem_file_scope(), sizeof(struct rlc_seq));
-    *seq_new = seq_item;
-    seq_new->arrival = pinfo->abs_ts;
-    list->list = g_list_append(list->list, seq_new); /* insert in order of arrival */
-    return FALSE;
+    if(is_unseen) {
+        /* Add to list for the first time this frame is checked */
+        seq_new = (struct rlc_seq *)wmem_alloc0(wmem_file_scope(), sizeof(struct rlc_seq));
+        *seq_new = seq_item;
+        seq_new->arrival = pinfo->abs_ts;
+        list->list = g_list_append(list->list, seq_new); /* insert in order of arrival */
+    }
+    return is_duplicate;
 }
 
 static void
 rlc_call_subdissector(enum rlc_channel_type channel, tvbuff_t *tvb,
               packet_info *pinfo, proto_tree *tree)
 {
+    gboolean is_rrc_payload = TRUE;
+    volatile dissector_handle_t next_dissector = NULL;
     enum rrc_message_type msgtype;
+
     switch (channel) {
         case RLC_UL_CCCH:
             msgtype = RRC_MESSAGE_TYPE_UL_CCCH;
@@ -1297,11 +1318,10 @@ rlc_call_subdissector(enum rlc_channel_type channel, tvbuff_t *tvb,
             msgtype = RRC_MESSAGE_TYPE_DL_CCCH;
             break;
         case RLC_DL_CTCH:
+            /* Payload of DL CTCH is BMC*/
+            is_rrc_payload = FALSE;
             msgtype = RRC_MESSAGE_TYPE_INVALID;
-            call_dissector(bmc_handle, tvb, pinfo, tree);
-            /* once the packet has been dissected, protect it from further changes using a 'fence' in the INFO column */
-            col_append_str(pinfo->cinfo, COL_INFO," ");
-            col_set_fence(pinfo->cinfo, COL_INFO);
+            next_dissector = bmc_handle;
             break;
         case RLC_UL_DCCH:
             msgtype = RRC_MESSAGE_TYPE_UL_DCCH;
@@ -1316,17 +1336,18 @@ rlc_call_subdissector(enum rlc_channel_type channel, tvbuff_t *tvb,
             msgtype = RRC_MESSAGE_TYPE_BCCH_FACH;
             break;
         case RLC_PS_DTCH:
+            /* Payload of PS DTCH is PDCP or just IP*/
+            is_rrc_payload = FALSE;
             msgtype = RRC_MESSAGE_TYPE_INVALID;
             /* assume transparent PDCP for now */
-            call_dissector(ip_handle, tvb, pinfo, tree);
-            /* once the packet has been dissected, protect it from further changes using a 'fence' in the INFO column */
-            col_append_str(pinfo->cinfo, COL_INFO," ");
-            col_set_fence(pinfo->cinfo, COL_INFO);
+            next_dissector = ip_handle;
             break;
         default:
             return; /* stop dissecting */
     }
-    if (msgtype != RRC_MESSAGE_TYPE_INVALID) {
+
+    if (is_rrc_payload && msgtype != RRC_MESSAGE_TYPE_INVALID) {
+        /* Passing the RRC sub type in the 'rrc_info' struct */
         struct rrc_info *rrcinf;
         fp_info *fpinf;
         fpinf = (fp_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_fp, 0);
@@ -1336,7 +1357,21 @@ rlc_call_subdissector(enum rlc_channel_type channel, tvbuff_t *tvb,
             p_add_proto_data(wmem_file_scope(), pinfo, proto_rrc, 0, rrcinf);
         }
         rrcinf->msgtype[fpinf->cur_tb] = msgtype;
-        call_dissector(rrc_handle, tvb, pinfo, tree);
+        next_dissector = rrc_handle;
+    }
+
+    if(next_dissector != NULL) {
+        TRY {
+            call_dissector(next_dissector, tvb, pinfo, tree);
+        }
+        CATCH_NONFATAL_ERRORS {
+            /*
+             * Sub dissector threw an exception
+             * Show the exception and continue dissecting other SDUs.
+             */
+            show_exception(tvb, pinfo, tree, EXCEPT_CODE, GET_MESSAGE);
+        }
+        ENDTRY;
         /* once the packet has been dissected, protect it from further changes using a 'fence' in the INFO column */
         col_append_str(pinfo->cinfo, COL_INFO," ");
         col_set_fence(pinfo->cinfo, COL_INFO);
@@ -2390,10 +2425,10 @@ dissect_rlc_am(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
     /* do not detect duplicates or reassemble, if prefiltering is done */
     if (pinfo->num == 0) return;
     /* check for duplicates, but not if already visited */
-    if (pinfo->fd->flags.visited == FALSE && rlc_is_duplicate(RLC_AM, pinfo, seq, &orig_num, atm) == TRUE) {
+    if (!PINFO_FD_VISITED(pinfo) && rlc_is_duplicate(RLC_AM, pinfo, seq, &orig_num, atm) == TRUE) {
         g_hash_table_insert(duplicate_table, GUINT_TO_POINTER(pinfo->num), GUINT_TO_POINTER(orig_num));
         return;
-    } else if (pinfo->fd->flags.visited == TRUE && tree) {
+    } else if (PINFO_FD_VISITED(pinfo) && tree) {
         gpointer value = g_hash_table_lookup(duplicate_table, GUINT_TO_POINTER(pinfo->num));
         if (value != NULL) {
             col_add_fstr(pinfo->cinfo, COL_INFO, "[RLC AM Fragment] [Duplicate]  SN=%u %s", seq, (polling != 0) ? "(P)" : "");
@@ -2626,6 +2661,19 @@ dissect_rlc_dch_unknown(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
     return tvb_captured_length(tvb);
 }
 
+static void
+report_heur_error(proto_tree *tree, packet_info *pinfo, expert_field *eiindex,
+                  tvbuff_t *tvb, gint start, gint length)
+{
+    proto_item *ti;
+    proto_tree *subtree;
+
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "RLC");
+    col_clear(pinfo->cinfo, COL_INFO);
+    ti = proto_tree_add_item(tree, proto_umts_rlc, tvb, 0, -1, ENC_NA);
+    subtree = proto_item_add_subtree(ti, ett_rlc);
+    proto_tree_add_expert(subtree, pinfo, eiindex, tvb, start, length);
+}
 
 /* Heuristic dissector looks for supported framing protocol (see wiki page)  */
 static gboolean
@@ -2724,13 +2772,15 @@ dissect_rlc_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
                 continue;
             default:
                 /* It must be a recognised tag */
-                return FALSE;
+                report_heur_error(tree, pinfo, &ei_rlc_unknown_udp_framing_tag, tvb, offset-1, 1);
+                return TRUE;
         }
     }
 
     if ((channelTypePresent == FALSE) && (rlcModePresent == FALSE)) {
         /* Conditional fields are missing */
-        return FALSE;
+        report_heur_error(tree, pinfo, &ei_rlc_missing_udp_framing_tag, tvb, 0, offset);
+        return TRUE;
     }
 
     /* Store info in packet if needed */
@@ -3007,6 +3057,8 @@ proto_register_rlc(void)
         { &ei_rlc_ciphered_data, { "rlc.ciphered_data", PI_UNDECODED, PI_WARN, "Cannot dissect RLC frame because it is ciphered", EXPFILL }},
         { &ei_rlc_no_per_frame_data, { "rlc.no_per_frame_data", PI_PROTOCOL, PI_WARN, "Can't dissect RLC frame because no per-frame info was attached!", EXPFILL }},
         { &ei_rlc_incomplete_sequence, { "rlc.incomplete_sequence", PI_MALFORMED, PI_ERROR, "Error: Incomplete sequence", EXPFILL }},
+        { &ei_rlc_unknown_udp_framing_tag, { "rlc.unknown_udp_framing_tag", PI_UNDECODED, PI_WARN, "Unknown UDP framing tag, aborting dissection", EXPFILL }},
+        { &ei_rlc_missing_udp_framing_tag, { "rlc.missing_udp_framing_tag", PI_UNDECODED, PI_WARN, "Missing UDP framing conditional tag, aborting dissection", EXPFILL }}
     };
 
     proto_umts_rlc = proto_register_protocol("Radio Link Control", "RLC", "rlc");

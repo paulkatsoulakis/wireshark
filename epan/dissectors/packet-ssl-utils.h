@@ -198,13 +198,13 @@ typedef enum {
 
 #define SSL_HND_QUIC_TP_INITIAL_MAX_STREAM_DATA         0
 #define SSL_HND_QUIC_TP_INITIAL_MAX_DATA                1
-#define SSL_HND_QUIC_TP_INITIAL_MAX_STREAM_ID_BIDI      2
+#define SSL_HND_QUIC_TP_INITIAL_MAX_BIDI_STREAMS        2
 #define SSL_HND_QUIC_TP_IDLE_TIMEOUT                    3
-#define SSL_HND_QUIC_TP_OMIT_CONNECTION_ID              4
+#define SSL_HND_QUIC_TP_OMIT_CONNECTION_ID              4 /* removed in draft -11 */
 #define SSL_HND_QUIC_TP_MAX_PACKET_SIZE                 5
 #define SSL_HND_QUIC_TP_STATELESS_RESET_TOKEN           6
 #define SSL_HND_QUIC_TP_ACK_DELAY_EXPONENT              7
-#define SSL_HND_QUIC_TP_INITIAL_MAX_STREAM_ID_UNI       8
+#define SSL_HND_QUIC_TP_INITIAL_MAX_UNI_STREAMS         8
 
 /*
  * Lookup tables
@@ -291,6 +291,7 @@ static inline guint8 tls13_draft_version(guint32 version) {
 #define SSL_SERVER_EXTENDED_MASTER_SECRET (1<<8)
 #define SSL_NEW_SESSION_TICKET  (1<<10)
 #define SSL_ENCRYPT_THEN_MAC    (1<<11)
+#define SSL_SEEN_0RTT_APPDATA   (1<<12)
 
 #define SSL_EXTENDED_MASTER_SECRET_MASK (SSL_CLIENT_EXTENDED_MASTER_SECRET|SSL_SERVER_EXTENDED_MASTER_SECRET)
 
@@ -516,6 +517,8 @@ typedef struct {
     GHashTable *tls13_server_handshake;
     GHashTable *tls13_client_appdata;
     GHashTable *tls13_server_appdata;
+    GHashTable *tls13_early_exporter;
+    GHashTable *tls13_exporter;
 } ssl_master_key_map_t;
 
 gint ssl_get_keyex_alg(gint cipher);
@@ -588,6 +591,11 @@ ssl_cipher_setiv(SSL_CIPHER_CTX *cipher, guchar* iv, gint iv_len);
 extern const SslCipherSuite *
 ssl_find_cipher(int num);
 
+
+/** Returns the Libgcrypt cipher identifier or 0 if unavailable. */
+int
+ssl_get_cipher_algo(const SslCipherSuite *cipher_suite);
+
 /** Obtains the block size for a CBC block cipher.
  * @param cipher_suite a cipher suite as returned by ssl_find_cipher().
  * @return the block size of a cipher or 0 if unavailable.
@@ -616,6 +624,7 @@ ssl_change_cipher(SslDecryptSession *ssl_session, gboolean server);
  @param decoder the stream decoder to be used
  @param ct the content type of this ssl record
  @param record_version the version as contained in the record
+ @param ignore_mac_failed whether to ignore MAC or authenticity failures
  @param in a pointer to the ssl record to be decrypted
  @param inl the record length
  @param comp_str a pointer to the store the compression data
@@ -624,6 +633,7 @@ ssl_change_cipher(SslDecryptSession *ssl_session, gboolean server);
  @return 0 on success */
 extern gint
 ssl_decrypt_record(SslDecryptSession *ssl, SslDecoder *decoder, guint8 ct, guint16 record_version,
+        gboolean ignore_mac_failed,
         const guchar *in, guint16 inl, StringInfo *comp_str, StringInfo *out_str, guint *outl);
 
 /**
@@ -691,6 +701,13 @@ ssl_save_session(SslDecryptSession* ssl, GHashTable *session_hash);
 
 extern void
 ssl_finalize_decryption(SslDecryptSession *ssl, ssl_master_key_map_t *mk_map);
+
+extern gboolean
+tls13_generate_keys(SslDecryptSession *ssl_session, const StringInfo *secret, gboolean is_from_server);
+
+extern StringInfo *
+tls13_load_secret(SslDecryptSession *ssl, ssl_master_key_map_t *mk_map,
+                  gboolean is_from_server, TLSRecordType type);
 
 extern void
 tls13_change_key(SslDecryptSession *ssl, ssl_master_key_map_t *mk_map,
@@ -877,12 +894,12 @@ typedef struct ssl_common_dissect {
         gint hs_ext_quictp_parameter_value;
         gint hs_ext_quictp_parameter_initial_max_stream_data;
         gint hs_ext_quictp_parameter_initial_max_data;
-        gint hs_ext_quictp_parameter_initial_max_stream_id_bidi;
+        gint hs_ext_quictp_parameter_initial_max_bidi_streams;
         gint hs_ext_quictp_parameter_idle_timeout;
         gint hs_ext_quictp_parameter_max_packet_size;
         gint hs_ext_quictp_parameter_stateless_reset_token;
         gint hs_ext_quictp_parameter_ack_delay_exponent;
-        gint hs_ext_quictp_parameter_initial_max_stream_id_uni;
+        gint hs_ext_quictp_parameter_initial_max_uni_streams;
 
         /* do not forget to update SSL_COMMON_LIST_T and SSL_COMMON_HF_LIST! */
     } hf;
@@ -1071,6 +1088,12 @@ tls13_dissect_hnd_key_update(ssl_common_dissect_t *hf, tvbuff_t *tvb,
 extern guint32
 tls_dissect_sct_list(ssl_common_dissect_t *hf, tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                      guint32 offset, guint32 offset_end, guint16 version);
+
+extern gboolean
+tls13_hkdf_expand_label_context(int md, const StringInfo *secret,
+                        const char *label_prefix, const char *label,
+                        const guint8 *context, guint8 context_length,
+                        guint16 out_len, guchar **out);
 
 extern gboolean
 tls13_hkdf_expand_label(int md, const StringInfo *secret,
@@ -1871,10 +1894,10 @@ ssl_common_dissect_t name = {   \
         FT_UINT32, BASE_DEC, NULL, 0x00,                                \
         "Contains the initial value for the maximum amount of data that can be sent on the connection", HFILL }                                                                 \
     },                                                                  \
-    { & name .hf.hs_ext_quictp_parameter_initial_max_stream_id_bidi,    \
-      { "initial_max_stream_id_bidi", prefix ".quic.parameter.initial_max_stream_id_bidi",  \
-        FT_UINT32, BASE_DEC, NULL, 0x00,                                \
-        "Contains the initial maximum stream number the peer may initiate for bidirectional streams", HFILL } \
+    { & name .hf.hs_ext_quictp_parameter_initial_max_bidi_streams,    \
+      { "initial_max_bidi_streams", prefix ".quic.parameter.initial_max_bidi_streams",  \
+        FT_UINT16, BASE_DEC, NULL, 0x00,                                \
+        "Initial maximum number of application-owned bidirectional streams", HFILL } \
     },                                                                  \
     { & name .hf.hs_ext_quictp_parameter_idle_timeout,                  \
       { "idle_timeout", prefix ".quic.parameter.idle_timeout",          \
@@ -1896,10 +1919,10 @@ ssl_common_dissect_t name = {   \
         FT_UINT8, BASE_DEC, NULL, 0x00,                                \
         "Indicating an exponent used to decode the ACK Delay field in the ACK frame,", HFILL }  \
     },                                                                  \
-    { & name .hf.hs_ext_quictp_parameter_initial_max_stream_id_uni,    \
-      { "initial_max_stream_id_uni", prefix ".quic.parameter.initial_max_stream_id_uni",  \
-        FT_UINT32, BASE_DEC, NULL, 0x00,                                \
-        "Contains the initial maximum stream number the peer may initiate for unidirectional streams", HFILL } \
+    { & name .hf.hs_ext_quictp_parameter_initial_max_uni_streams,    \
+      { "initial_max_uni_streams", prefix ".quic.parameter.initial_max_uni_streams",  \
+        FT_UINT16, BASE_DEC, NULL, 0x00,                                \
+        "Initial maximum number of application-owned unidirectional streams", HFILL } \
     }
 /* }}} */
 
@@ -1962,6 +1985,14 @@ ssl_common_dissect_t name = {   \
         "Record fragment length is too large", EXPFILL } \
     }
 /* }}} */
+
+extern void
+ssl_common_register_ssl_alpn_dissector_table(const char *name,
+    const char *ui_name, const int proto);
+
+extern void
+ssl_common_register_dtls_alpn_dissector_table(const char *name,
+    const char *ui_name, const int proto);
 
 extern void
 ssl_common_register_options(module_t *module, ssl_common_options_t *options);

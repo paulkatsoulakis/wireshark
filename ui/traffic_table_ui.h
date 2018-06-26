@@ -6,7 +6,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef __CONVERSATION_UI_H__
 #define __CONVERSATION_UI_H__
@@ -53,25 +54,17 @@ typedef enum
     ENDP_COLUMN_BYTES_AB,
     ENDP_COLUMN_PKT_BA,
     ENDP_COLUMN_BYTES_BA,
-    ENDP_NUM_COLUMNS
+    ENDP_NUM_COLUMNS,
+    ENDP_COLUMN_GEO_COUNTRY = ENDP_NUM_COLUMNS,
+    ENDP_COLUMN_GEO_CITY,
+    ENDP_COLUMN_GEO_AS_NUM,
+    ENDP_COLUMN_GEO_AS_ORG,
+    ENDP_NUM_GEO_COLUMNS
 } endpoint_column_type_e;
 
-extern const char *endp_column_titles[ENDP_NUM_COLUMNS];
+extern const char *endp_column_titles[ENDP_NUM_GEO_COLUMNS];
 
 extern const char *endp_conn_title;
-
-#ifdef HAVE_GEOIP
-/** Create an HTML file containing a map showing the geograpical
- *  locations of IPv4 and IPv6 addresses. The map is named "ipmap.html".
- *
- * @param [in] endp_array GArray of hostlist_talker_t structs.
- * @param [in,out] err_str Set to error string on failure. Error string must
- * be g_freed. May be NULL.
- * @return Path of the map file if it was successfully written or NULL
- * on failure. The path must be g_freed.
- */
-gchar *create_endpoint_geoip_map(const GArray *endp_array, gchar **err_str);
-#endif
 
 #ifdef __cplusplus
 }

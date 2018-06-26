@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef PROGRESS_FRAME_H
 #define PROGRESS_FRAME_H
@@ -17,7 +18,7 @@ namespace Ui {
 class ProgressFrame;
 }
 
-#if defined(Q_OS_WIN) && QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
+#if defined(Q_OS_WIN)
 #include <QWinTaskbarButton>
 #include <QWinTaskbarProgress>
 #endif
@@ -62,9 +63,7 @@ signals:
     void stopLoading();
 
 protected:
-#if QT_VERSION > QT_VERSION_CHECK(5, 0, 0)
     void timerEvent(QTimerEvent *event);
-#endif
 
 private:
     Ui::ProgressFrame *ui;
@@ -74,11 +73,9 @@ private:
     QString status_;
     bool terminate_is_stop_;
     gboolean *stop_flag_;
-#if QT_VERSION > QT_VERSION_CHECK(5, 0, 0)
     int show_timer_;
     QGraphicsOpacityEffect *effect_;
     QPropertyAnimation *animation_;
-#endif
 #ifdef QWINTASKBARPROGRESS_H
     bool update_taskbar_;
     QWinTaskbarProgress *taskbar_progress_;

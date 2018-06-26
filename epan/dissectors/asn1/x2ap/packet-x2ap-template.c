@@ -12,7 +12,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Ref:
- * 3GPP TS 36.423 V15.0.0 (2017-12)
+ * 3GPP TS 36.423 V15.2.0 (2018-06)
  */
 
 #include "config.h"
@@ -24,6 +24,7 @@
 #include <epan/sctpppids.h>
 #include <epan/proto_data.h>
 
+#include "packet-x2ap.h"
 #include "packet-per.h"
 #include "packet-e212.h"
 #include "packet-lte-rrc.h"
@@ -138,6 +139,7 @@ static int ett_x2ap_SgNBtoMeNBContainer = -1;
 static int ett_x2ap_RRCContainer = -1;
 static int ett_x2ap_NRencryptionAlgorithms = -1;
 static int ett_x2ap_NRintegrityProtectionAlgorithms = -1;
+static int ett_x2ap_measurementTimingConfiguration = -1;
 #include "packet-x2ap-ett.c"
 
 typedef enum {
@@ -222,6 +224,12 @@ static void
 x2ap_Threshold_RSRQ_fmt(gchar *s, guint32 v)
 {
   g_snprintf(s, ITEM_LABEL_LENGTH, "%.1fdB (%u)", ((float)v/2)-20, v);
+}
+
+static void
+x2ap_Packet_LossRate_fmt(gchar *s, guint32 v)
+{
+  g_snprintf(s, ITEM_LABEL_LENGTH, "%.1f %% (%u)", (float)v/10, v);
 }
 
 static struct x2ap_private_data*
@@ -571,6 +579,7 @@ void proto_register_x2ap(void) {
     &ett_x2ap_RRCContainer,
     &ett_x2ap_NRencryptionAlgorithms,
     &ett_x2ap_NRintegrityProtectionAlgorithms,
+    &ett_x2ap_measurementTimingConfiguration,
 #include "packet-x2ap-ettarr.c"
   };
 

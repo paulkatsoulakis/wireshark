@@ -2001,7 +2001,7 @@ Brian K. Teravskis      <Brian_Teravskis[AT]Cargill.com> {
 	Support for saving RTP analysis data in CSV form
 }
 
-Nathan Jennings         <njgm890[AT]gmail.com> {
+Nathan Jennings         <natej.git[AT]gmail.com> {
 	Support for user-supplied interface descriptions
 	Support for hiding interfaces in drop-down list in capture
 	    dialog
@@ -3498,7 +3498,7 @@ Tobias Rutz		<tobias.rutz[AT]work-microwave.de> {
 	DVB-S2 Baseband Frame and GSE support
 }
 
-Michał Łabędzki		<michal.labedzki[AT]tieto.com> {
+Michał Łabędzki		<michal.labedzki[AT]wireshark.org> {
 	Bluetooth BNEP dissector
 	Bluetooth HID dissector
 	Bluetooth SAP dissector

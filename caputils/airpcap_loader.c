@@ -7,13 +7,14 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 2000 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
 #include <glib.h>
 
-#include <epan/crypt/airpdcap_ws.h>
+#include <epan/crypt/dot11decrypt_ws.h>
 #include <epan/strutil.h>
 #include <wsutil/file_util.h>
 #include <wsutil/frequency-utils.h>

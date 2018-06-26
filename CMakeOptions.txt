@@ -1,7 +1,6 @@
 # Build options for use by CMake
 
 option(BUILD_wireshark     "Build Wireshark" ON)
-option(BUILD_wireshark_gtk "Build Wireshark (GTK+ UI)" OFF)
 option(BUILD_tshark        "Build tshark" ON)
 option(BUILD_tfshark       "Build tfshark" OFF)
 option(BUILD_rawshark      "Build rawshark" ON)
@@ -20,10 +19,16 @@ option(BUILD_xxx2deb       "Build xxx2deb" OFF)
 option(BUILD_androiddump   "Build androiddump" ON)
 option(BUILD_sshdump       "Build sshdump" ON)
 option(BUILD_ciscodump     "Build ciscodump" ON)
+option(BUILD_dpauxmon      "Build dpauxmon" ON)
 option(BUILD_randpktdump   "Build randpktdump" ON)
 option(BUILD_udpdump       "Build udpdump" ON)
 option(BUILD_sharkd        "Build sharkd" ON)
-option(BUILD_fuzzshark     "Build fuzzshark" ON)
+if(WIN32)
+	option(BUILD_fuzzshark     "Build fuzzshark" OFF)
+else()
+	option(BUILD_fuzzshark     "Build fuzzshark" ON)
+endif()
+option(BUILD_mmdbresolve   "Build MaxMind DB resolver" ON)
 
 option(DISABLE_WERROR    "Do not treat warnings as errors" OFF)
 option(DISABLE_FRAME_LARGER_THAN_WARNING "Disable warning if the size of a function frame is large" OFF)
@@ -36,15 +41,6 @@ option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer (UBSan) for debugging" OF
 option(ENABLE_CHECKHF_CONFLICT "Enable hf conflict check for debugging (start-up may be slower)" OFF)
 option(ENABLE_CCACHE "Speed up compiling and linking using ccache if possible" OFF)
 
-#
-# Leave GTK2 the default on Windows, looks better than GTK3
-#
-if(WIN32)
-	option(ENABLE_GTK3       "Use GTK3 instead of GTK2 to build wireshark" OFF)
-else()
-	option(ENABLE_GTK3       "Use GTK3 instead of GTK2 to build wireshark" ON)
-endif()
-option(ENABLE_QT5        "Use Qt5 instead of Qt4 to build wireshark" ON)
 option(ENABLE_PCAP       "Enable libpcap support (required for capturing)" ON)
 #
 # AirPcap support is available only on Windows.  It might be nice to have it
@@ -59,7 +55,6 @@ option(ENABLE_PLUGINS           "Build with plugins" ON)
 option(ENABLE_PLUGIN_IFDEMO     "Build with plugin interface demo" OFF)
 option(ENABLE_PCAP_NG_DEFAULT   "Enable pcapng as default file format" ON)
 
-option(ENABLE_PORTAUDIO  "Build with PortAudio support" ON)
 option(ENABLE_ZLIB       "Build with zlib compression support" ON)
 option(ENABLE_LZ4        "Build with LZ4 compression support" ON)
 option(ENABLE_SNAPPY     "Build with Snappy compression support" ON)
@@ -67,7 +62,6 @@ option(ENABLE_NGHTTP2    "Build with HTTP/2 header decompression support" ON)
 option(ENABLE_LUA        "Build with Lua dissector support" ON)
 option(ENABLE_SMI        "Build with libsmi snmp support" ON)
 option(ENABLE_GNUTLS     "Build with GNU TLS support" ON)
-option(ENABLE_GEOIP      "Build with GeoIP support" ON)
 if(WIN32)
 	option(ENABLE_WINSPARKLE "Enable WinSparkle support" ON)
 endif()

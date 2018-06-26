@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
@@ -244,15 +245,7 @@ QWidget *InterfaceToolbar::createSelector(iface_toolbar_control *control)
         combobox->addItem(display, value);
         if (val->is_default)
         {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
             combobox->setCurrentText(display);
-#else
-            int new_index = combobox->findText(display);
-            if (new_index >= 0)
-            {
-                combobox->setCurrentIndex(new_index);
-            }
-#endif
             setDefaultValue(control->num, value.toUtf8());
         }
         foreach (QString ifname, interface_.keys())
@@ -764,15 +757,7 @@ void InterfaceToolbar::startCapture(GArray *ifaces)
 
     if (!selected_found && !first_capturing_ifname.isEmpty())
     {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
         ui->interfacesComboBox->setCurrentText(first_capturing_ifname);
-#else
-        int new_index = ui->interfacesComboBox->findText(first_capturing_ifname);
-        if (new_index >= 0)
-        {
-            ui->interfacesComboBox->setCurrentIndex(new_index);
-        }
-#endif
     }
     else
     {
@@ -786,9 +771,10 @@ void InterfaceToolbar::stopCapture()
     {
         if (interface_[ifname].reader_thread)
         {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
-            interface_[ifname].reader_thread->requestInterruption();
-#endif
+            if (!interface_[ifname].reader_thread->isFinished())
+            {
+                interface_[ifname].reader_thread->requestInterruption();
+            }
             interface_[ifname].reader_thread = NULL;
         }
 
@@ -952,15 +938,7 @@ void InterfaceToolbar::interfaceListChanged()
             if (selected_ifname.compare(device->name) == 0)
             {
                 // Keep selected interface
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
                 ui->interfacesComboBox->setCurrentText(device->name);
-#else
-                int new_index = ui->interfacesComboBox->findText(device->name);
-                if (new_index >= 0)
-                {
-                    ui->interfacesComboBox->setCurrentIndex(new_index);
-                }
-#endif
                 keep_selected = true;
             }
         }

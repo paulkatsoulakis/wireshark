@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef RTP_PLAYER_DIALOG_H
 #define RTP_PLAYER_DIALOG_H
@@ -22,8 +23,6 @@
 namespace Ui {
 class RtpPlayerDialog;
 }
-
-struct _rtp_stream_info;
 
 class QCPItemStraightLine;
 class QDialogButtonBox;
@@ -59,9 +58,9 @@ public:
      * Requires src_addr, src_port, dest_addr, dest_port, ssrc, packet_count,
      * setup_frame_number, and start_rel_time.
      *
-     * @param rtp_stream struct with rtp_stream info
+     * @param rtpstream struct with rtpstream info
      */
-    void addRtpStream(struct _rtp_stream_info *rtp_stream);
+    void addRtpStream(rtpstream_info_t *rtpstream);
 
 public slots:
 
@@ -114,7 +113,7 @@ private:
     QCPItemStraightLine *cur_play_pos_;
     QString playback_error_;
 
-//    const QString streamKey(const struct _rtp_stream_info *rtp_stream);
+//    const QString streamKey(const rtpstream_info_t *rtpstream);
 //    const QString streamKey(const packet_info *pinfo, const struct _rtp_info *rtpinfo);
 
     // Tap callbacks

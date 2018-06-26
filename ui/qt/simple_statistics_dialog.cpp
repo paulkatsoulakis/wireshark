@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "simple_statistics_dialog.h"
 
@@ -201,10 +202,12 @@ void SimpleStatisticsDialog::addMissingRows(struct _stat_data_t *stat_data)
         }
         for (guint element = ti->childCount(); element < st_table->num_elements; element++) {
             stat_tap_table_item_type* fields = stat_tap_get_field_data(st_table, element, 0);
-            SimpleStatisticsTreeWidgetItem *ss_ti = new SimpleStatisticsTreeWidgetItem(ti, st_table->num_fields, fields);
-            for (int col = 0; col < (int) stu_->nfields; col++) {
-                if (stu_->fields[col].align == TAP_ALIGN_RIGHT) {
-                    ss_ti->setTextAlignment(col, Qt::AlignRight);
+            if (stu_->nfields > 0) {
+                SimpleStatisticsTreeWidgetItem *ss_ti = new SimpleStatisticsTreeWidgetItem(ti, st_table->num_fields, fields);
+                for (int col = 0; col < (int) stu_->nfields; col++) {
+                    if (stu_->fields[col].align == TAP_ALIGN_RIGHT) {
+                        ss_ti->setTextAlignment(col, Qt::AlignRight);
+                    }
                 }
             }
         }
@@ -217,7 +220,7 @@ void SimpleStatisticsDialog::tapReset(void *sd_ptr)
     SimpleStatisticsDialog *ss_dlg = static_cast<SimpleStatisticsDialog *>(sd->user_data);
     if (!ss_dlg) return;
 
-    reset_stat_table(sd->stat_tap_data, NULL, NULL);
+    reset_stat_table(sd->stat_tap_data);
     ss_dlg->statsTreeWidget()->clear();
 }
 
@@ -249,7 +252,7 @@ void SimpleStatisticsDialog::fillTree()
     stat_data.stat_tap_data = stu_;
     stat_data.user_data = this;
 
-    stu_->stat_tap_init_cb(stu_, NULL, NULL);
+    stu_->stat_tap_init_cb(stu_);
 
     QString display_filter = displayFilter();
     if (!registerTapListener(stu_->tap_name,
@@ -259,7 +262,7 @@ void SimpleStatisticsDialog::fillTree()
                              tapReset,
                              stu_->packet_func,
                              tapDraw)) {
-        free_stat_tables(stu_, NULL, NULL);
+        free_stat_tables(stu_);
         reject(); // XXX Stay open instead?
         return;
     }
@@ -295,7 +298,7 @@ SimpleStatisticsDialog::~SimpleStatisticsDialog()
     stu_->refcount--;
     if (stu_->refcount == 0) {
         if (stu_->tables)
-            free_stat_tables(stu_, NULL, NULL);
+            free_stat_tables(stu_);
     }
 }
 

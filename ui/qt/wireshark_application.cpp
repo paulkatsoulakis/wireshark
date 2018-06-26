@@ -21,6 +21,7 @@
 #include "wsutil/filesystem.h"
 
 #include "epan/addr_resolv.h"
+#include "epan/column-utils.h"
 #include "epan/disabled_protos.h"
 #include "epan/ftypes/ftypes.h"
 #include "epan/prefs.h"
@@ -86,10 +87,8 @@
 #include <QUrl>
 #include <qmath.h>
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 #include <QFontDatabase>
 #include <QMimeDatabase>
-#endif
 
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -107,8 +106,6 @@ static QHash<int, QList<QAction *> > added_menu_groups_;
 static QHash<int, QList<QAction *> > removed_menu_groups_;
 
 QString WiresharkApplication::window_title_separator_ = QString::fromUtf8(" " UTF8_MIDDLE_DOT " ");
-
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 
 // QMimeDatabase parses a large-ish XML file and can be slow to initialize.
 // Do so in a worker thread as early as possible.
@@ -132,7 +129,6 @@ private:
         QFontDatabase font_db;
     }
 };
-#endif
 
 void
 topic_action(topic_action_e action)
@@ -258,11 +254,12 @@ void WiresharkApplication::refreshRecentCaptures() {
     }
 }
 
-void WiresharkApplication::refreshAddressResolution()
+void WiresharkApplication::refreshPacketData()
 {
-    // Anything new show up?
     if (host_name_lookup_process()) {
         emit addressResolutionChanged();
+    } else if (col_data_changed()) {
+        emit columnDataChanged();
     }
 }
 
@@ -426,7 +423,6 @@ void WiresharkApplication::setConfigurationProfile(const gchar *profile_name, bo
     timestamp_set_type(recent.gui_time_format);
     timestamp_set_precision(recent.gui_time_precision);
     timestamp_set_seconds_type (recent.gui_seconds_format);
-    packet_list_enable_color(recent.packet_list_colorize);
     tap_update_timer_.setInterval(prefs.tap_update_interval);
 
     prefs_to_capture_opts();
@@ -494,11 +490,7 @@ void WiresharkApplication::applyCustomColorsFromRecent()
     for (GList *custom_color = recent.custom_colors; custom_color; custom_color = custom_color->next) {
         QRgb rgb = QString((const char *)custom_color->data).toUInt(&ok, 16);
         if (ok) {
-#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-            QColorDialog::setCustomColor(i++, rgb);
-#else
             QColorDialog::setCustomColor(i++, QColor(rgb));
-#endif
         }
     }
 }
@@ -521,11 +513,7 @@ void WiresharkApplication::storeCustomColorsInRecent()
         prefs_clear_string_list(recent.custom_colors);
         recent.custom_colors = NULL;
         for (int i = 0; i < QColorDialog::customCount(); i++) {
-#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-            QRgb rgb = QColorDialog::customColor(i);
-#else
             QRgb rgb = QColorDialog::customColor(i).rgb();
-#endif
             recent.custom_colors = g_list_append(recent.custom_colors, g_strdup_printf("%08x", rgb));
         }
     }
@@ -706,6 +694,8 @@ void WiresharkApplication::cleanup()
 
     qDeleteAll(recent_captures_);
     recent_captures_.clear();
+    // We might end up here via exit_application.
+    QThreadPool::globalInstance()->waitForDone();
 }
 
 void WiresharkApplication::itemStatusFinished(const QString filename, qint64 size, bool accessible) {
@@ -732,12 +722,10 @@ WiresharkApplication::WiresharkApplication(int &argc,  char **argv) :
     wsApp = this;
     setApplicationName("Wireshark");
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
     MimeDatabaseInitThread *mime_db_init_thread = new(MimeDatabaseInitThread);
     QThreadPool::globalInstance()->start(mime_db_init_thread);
     FontDatabaseInitThread *font_db_init_thread = new (FontDatabaseInitThread);
     QThreadPool::globalInstance()->start(font_db_init_thread);
-#endif
 
     Q_INIT_RESOURCE(about);
     Q_INIT_RESOURCE(i18n);
@@ -751,9 +739,7 @@ WiresharkApplication::WiresharkApplication(int &argc,  char **argv) :
     ws_load_library("riched20.dll");
 #endif // Q_OS_WIN
 
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 1, 0))
     setAttribute(Qt::AA_UseHighDpiPixmaps);
-#endif
     //
     // XXX - this means we try to check for the existence of all files
     // in the recent list every 2 seconds; that causes noticeable network
@@ -844,9 +830,9 @@ WiresharkApplication::WiresharkApplication(int &argc,  char **argv) :
     connect(&recent_timer_, SIGNAL(timeout()), this, SLOT(refreshRecentCaptures()));
     recent_timer_.start(2000);
 
-    addr_resolv_timer_.setParent(this);
-    connect(&addr_resolv_timer_, SIGNAL(timeout()), this, SLOT(refreshAddressResolution()));
-    addr_resolv_timer_.start(1000);
+    packet_data_timer_.setParent(this);
+    connect(&packet_data_timer_, SIGNAL(timeout()), this, SLOT(refreshPacketData()));
+    packet_data_timer_.start(1000);
 
     tap_update_timer_.setParent(this);
     tap_update_timer_.setInterval(TAP_UPDATE_DEFAULT_INTERVAL);
@@ -883,6 +869,7 @@ WiresharkApplication::WiresharkApplication(int &argc,  char **argv) :
 
 WiresharkApplication::~WiresharkApplication()
 {
+    wsApp = NULL;
     clearDynamicMenuGroupItems();
     free_filter_lists();
 }
@@ -1338,14 +1325,14 @@ void WiresharkApplication::softwareUpdateShutdownRequest() {
 }
 #endif
 
-void WiresharkApplication::captureEventHandler(CaptureEvent * ev)
+void WiresharkApplication::captureEventHandler(CaptureEvent ev)
 {
-    switch(ev->captureContext())
+    switch(ev.captureContext())
     {
 #ifdef HAVE_LIBPCAP
     case CaptureEvent::Update:
     case CaptureEvent::Fixed:
-        switch ( ev->eventType() )
+        switch ( ev.eventType() )
         {
         case CaptureEvent::Started:
             active_captures_++;
@@ -1361,10 +1348,11 @@ void WiresharkApplication::captureEventHandler(CaptureEvent * ev)
         break;
 #endif
     case CaptureEvent::File:
-        switch ( ev->eventType() )
+    case CaptureEvent::Reload:
+    case CaptureEvent::Rescan:
+        switch ( ev.eventType() )
         {
         case CaptureEvent::Started:
-            // Doesn't appear to do anything. Logic probably needs to be in file.c.
             QTimer::singleShot(TAP_UPDATE_DEFAULT_INTERVAL / 5, this, SLOT(updateTaps()));
             QTimer::singleShot(TAP_UPDATE_DEFAULT_INTERVAL / 2, this, SLOT(updateTaps()));
             break;

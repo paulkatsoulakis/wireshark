@@ -1458,7 +1458,7 @@ main(int argc, char *argv[])
    * Attempt to get the pathname of the directory containing the
    * executable file.
    */
-  init_progfile_dir_error = init_progfile_dir(argv[0], main);
+  init_progfile_dir_error = init_progfile_dir(argv[0]);
   if (init_progfile_dir_error != NULL) {
     fprintf(stderr,
             "capinfos: Can't get pathname of directory containing the capinfos program: %s.\n",
@@ -1719,6 +1719,7 @@ main(int argc, char *argv[])
 
 exit:
   g_free(hash_buf);
+  gcry_md_close(hd);
   wtap_cleanup();
   free_progdirs();
   return overall_error_status;

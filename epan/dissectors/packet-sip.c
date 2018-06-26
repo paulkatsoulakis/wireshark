@@ -222,6 +222,8 @@ static gint hf_sip_p_acc_net_i_acc_type   = -1;
 static gint hf_sip_p_acc_net_i_ucid_3gpp  = -1;
 
 static gint hf_sip_service_priority = -1;
+static gint hf_sip_icid_value = -1;
+static gint hf_sip_icid_gen_addr = -1;
 
 /* Initialize the subtree pointers */
 static gint ett_sip                       = -1;
@@ -255,6 +257,7 @@ static gint ett_sip_ppi_uri               = -1;
 static gint ett_sip_tc_uri                = -1;
 static gint ett_sip_session_id            = -1;
 static gint ett_sip_p_access_net_info     = -1;
+static gint ett_sip_p_charging_vector      = -1;
 static gint ett_sip_feature_caps          = -1;
 
 static expert_field ei_sip_unrecognized_header = EI_INIT;
@@ -266,6 +269,7 @@ static expert_field ei_sip_odd_register_response = EI_INIT;
 static expert_field ei_sip_sipsec_malformed = EI_INIT;
 static expert_field ei_sip_via_sent_by_port = EI_INIT;
 static expert_field ei_sip_content_length_invalid = EI_INIT;
+static expert_field ei_sip_retry_after_invalid = EI_INIT;
 static expert_field ei_sip_Status_Code_invalid = EI_INIT;
 static expert_field ei_sip_authorization_invalid = EI_INIT;
 
@@ -904,9 +908,11 @@ typedef struct _header_field_t {
     gchar* header_desc;
 } header_field_t;
 
-static header_field_t* sip_custom_header_fields = NULL;
-static guint sip_custom_num_header_fields = 0;
-static wmem_map_t *sip_custom_header_fields_hash = NULL;
+static header_field_t* sip_custom_header_fields;
+static guint sip_custom_num_header_fields;
+static GHashTable *sip_custom_header_fields_hash;
+static hf_register_info *dynamic_hf;
+static guint dynamic_hf_size;
 
 static gboolean
 header_fields_update_cb(void *r, char **err)
@@ -960,52 +966,67 @@ header_fields_free_cb(void*r)
 }
 
 static void
-header_fields_initialize_cb(void)
+deregister_header_fields(void)
 {
-    static hf_register_info* hf;
+    if (dynamic_hf) {
+        /* Deregister all fields */
+        for (guint i = 0; i < dynamic_hf_size; i++) {
+            proto_deregister_field(proto_sip, *(dynamic_hf[i].p_id));
+            g_free(dynamic_hf[i].p_id);
+        }
+
+        proto_add_deregistered_data(dynamic_hf);
+        dynamic_hf = NULL;
+        dynamic_hf_size = 0;
+    }
+
+    if (sip_custom_header_fields_hash) {
+        g_hash_table_destroy(sip_custom_header_fields_hash);
+        sip_custom_header_fields_hash = NULL;
+    }
+}
+
+static void
+header_fields_post_update_cb(void)
+{
     gint* hf_id;
-    guint i;
     gchar* header_name;
     gchar* header_name_key;
 
-    if (hf) {
-        guint hf_size = wmem_map_size(sip_custom_header_fields_hash);
-        /* Deregister all fields */
-        for (i = 0; i < hf_size; i++) {
-            proto_deregister_field(proto_sip, *(hf[i].p_id));
-            header_name_key = wmem_ascii_strdown(NULL, hf[i].hfinfo.name, -1);
-            wmem_map_remove(sip_custom_header_fields_hash, header_name_key);
-            wmem_free(NULL, header_name_key);
-            wmem_free(wmem_epan_scope(), hf[i].p_id);
-        }
-        proto_add_deregistered_data(hf);
-        hf = NULL;
-    }
+    deregister_header_fields();
 
     if (sip_custom_num_header_fields) {
-        hf = g_new0(hf_register_info, sip_custom_num_header_fields);
+        sip_custom_header_fields_hash = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+        dynamic_hf = g_new0(hf_register_info, sip_custom_num_header_fields);
+        dynamic_hf_size = sip_custom_num_header_fields;
 
-        for (i = 0; i < sip_custom_num_header_fields; i++) {
-            hf_id = wmem_new(wmem_epan_scope(), gint);
+        for (guint i = 0; i < dynamic_hf_size; i++) {
+            hf_id = g_new(gint, 1);
             *hf_id = -1;
             header_name = g_strdup(sip_custom_header_fields[i].header_name);
-            header_name_key = wmem_ascii_strdown(wmem_epan_scope(), header_name, -1);
+            header_name_key = g_ascii_strdown(header_name, -1);
 
-            hf[i].p_id = hf_id;
-            hf[i].hfinfo.name = header_name;
-            hf[i].hfinfo.abbrev = g_strdup_printf("sip.%s", header_name);
-            hf[i].hfinfo.type = FT_STRING;
-            hf[i].hfinfo.display = BASE_NONE;
-            hf[i].hfinfo.strings = NULL;
-            hf[i].hfinfo.bitmask = 0;
-            hf[i].hfinfo.blurb = g_strdup(sip_custom_header_fields[i].header_desc);
-            HFILL_INIT(hf[i]);
+            dynamic_hf[i].p_id = hf_id;
+            dynamic_hf[i].hfinfo.name = header_name;
+            dynamic_hf[i].hfinfo.abbrev = g_strdup_printf("sip.%s", header_name);
+            dynamic_hf[i].hfinfo.type = FT_STRING;
+            dynamic_hf[i].hfinfo.display = BASE_NONE;
+            dynamic_hf[i].hfinfo.strings = NULL;
+            dynamic_hf[i].hfinfo.bitmask = 0;
+            dynamic_hf[i].hfinfo.blurb = g_strdup(sip_custom_header_fields[i].header_desc);
+            HFILL_INIT(dynamic_hf[i]);
 
-            wmem_map_insert(sip_custom_header_fields_hash, header_name_key, hf_id);
+            g_hash_table_insert(sip_custom_header_fields_hash, header_name_key, hf_id);
         }
 
-        proto_register_field_array(proto_sip, hf, sip_custom_num_header_fields);
+        proto_register_field_array(proto_sip, dynamic_hf, dynamic_hf_size);
     }
+}
+
+static void
+header_fields_reset_cb(void)
+{
+    deregister_header_fields();
 }
 
 UAT_CSTRING_CB_DEF(sip_custom_header_fields, header_name, header_field_t)
@@ -3019,6 +3040,112 @@ static void dissect_sip_p_access_network_info_header(tvbuff_t *tvb, proto_tree *
 }
 
 /*
+The syntax for the P-Charging-Vector header field is described as
+follows:
+
+    P-Charging-Vector  = "P-Charging-Vector" HCOLON icid-value
+    *(SEMI charge-params)
+    charge-params      = icid-gen-addr / orig-ioi / term-ioi /
+    transit-ioi / related-icid /
+    related-icid-gen-addr / generic-param
+    icid-value                = "icid-value" EQUAL gen-value
+    icid-gen-addr             = "icid-generated-at" EQUAL host
+    orig-ioi                  = "orig-ioi" EQUAL gen-value
+    term-ioi                  = "term-ioi" EQUAL gen-value
+    transit-ioi               = "transit-ioi" EQUAL transit-ioi-list
+    transit-ioi-list          = DQUOTE transit-ioi-param
+    *(COMMA transit-ioi-param) DQUOTE
+    transit-ioi-param         = transit-ioi-indexed-value /
+    transit-ioi-void-value
+    transit-ioi-indexed-value = transit-ioi-name "."
+    transit-ioi-index
+    transit-ioi-name          = ALPHA *(ALPHA / DIGIT)
+    transit-ioi-index         = 1*DIGIT
+    transit-ioi-void-value    = "void"
+    related-icid              = "related-icid" EQUAL gen-value
+    related-icid-gen-addr     = "related-icid-generated-at" EQUAL host
+*/
+static void
+dissect_sip_p_charging_vector_header(tvbuff_t *tvb, proto_tree *tree, gint start_offset, gint line_end_offset)
+{
+
+    gint  current_offset, semi_colon_offset, length, equals_offset;
+
+    /* skip Spaces and Tabs */
+    start_offset = tvb_skip_wsp(tvb, start_offset, line_end_offset - start_offset);
+
+    if (start_offset >= line_end_offset)
+    {
+        /* Nothing to parse */
+        return;
+    }
+
+    /* icid-value                = "icid-value" EQUAL gen-value */
+    current_offset = start_offset;
+    semi_colon_offset = tvb_find_guint8(tvb, current_offset, line_end_offset - current_offset, ';');
+
+    if (semi_colon_offset == -1) {
+        /* No parameters, is that allowed?*/
+        semi_colon_offset = line_end_offset;
+    }
+
+    length = semi_colon_offset - current_offset;
+
+    /* Parse parameter and value */
+    equals_offset = tvb_find_guint8(tvb, current_offset + 1, length, '=');
+    if (equals_offset == -1) {
+        /* Does not conform to ABNF */
+        return;
+    }
+
+    /* Get the icid-value */
+    proto_tree_add_item(tree, hf_sip_icid_value, tvb,
+        equals_offset + 1, semi_colon_offset - equals_offset - 1, ENC_UTF_8 | ENC_NA);
+
+    current_offset = semi_colon_offset + 1;
+
+    /* Add the rest of the parameters to the tree */
+    while (current_offset < line_end_offset) {
+        gchar *param_name = NULL;
+        gint par_name_end_offset;
+        /* skip Spaces and Tabs */
+        current_offset = tvb_skip_wsp(tvb, current_offset, line_end_offset - current_offset);
+
+        semi_colon_offset = tvb_find_guint8(tvb, current_offset, line_end_offset - current_offset, ';');
+
+        if (semi_colon_offset == -1) {
+            semi_colon_offset = line_end_offset;
+        }
+
+        length = semi_colon_offset - current_offset;
+
+        /* Parse parameter and value */
+        equals_offset = tvb_find_guint8(tvb, current_offset + 1, length, '=');
+        if (equals_offset != -1) {
+            /* Has value part */
+            par_name_end_offset = equals_offset;
+            /* Extract the parameter name */
+            param_name = tvb_get_string_enc(wmem_packet_scope(), tvb, current_offset, par_name_end_offset - current_offset, ENC_UTF_8 | ENC_NA);
+            /* charge-params */
+            if ((param_name != NULL) && (g_ascii_strcasecmp(param_name, "icid-gen-addr") == 0)) {
+                proto_tree_add_item(tree, hf_sip_icid_gen_addr, tvb,
+                    equals_offset + 1, semi_colon_offset - equals_offset - 1, ENC_UTF_8 | ENC_NA);
+            }
+            else {
+                proto_tree_add_format_text(tree, tvb, current_offset, length);
+            }
+        }
+        else {
+            proto_tree_add_format_text(tree, tvb, current_offset, length);
+        }
+
+        current_offset = semi_colon_offset + 1;
+    }
+
+
+}
+
+/*
 https://tools.ietf.org/html/rfc6809
 The ABNF for the Feature-Caps header fields is:
 
@@ -3466,7 +3593,10 @@ dissect_sip_common(tvbuff_t *tvb, int offset, int remaining_length, packet_info 
             value_len = (gint) (line_end_offset - value_offset);
 
             if (hf_index == -1) {
-                gint *hf_ptr = (gint*)wmem_map_lookup(sip_custom_header_fields_hash, header_name);
+                gint *hf_ptr = NULL;
+                if (sip_custom_header_fields_hash) {
+                    hf_ptr = (gint*)g_hash_table_lookup(sip_custom_header_fields_hash, header_name);
+                }
                 if (hf_ptr) {
                     sip_proto_tree_add_string(hdr_tree, *hf_ptr, tvb, offset,
                                               next_offset - offset, value_offset, value_len);
@@ -3790,7 +3920,23 @@ dissect_sip_common(tvbuff_t *tvb, int offset, int remaining_length, packet_info 
                             }
                         }/* hdr_tree */
                         break;
+                    case POS_RETRY_AFTER:
+                    {
+                        /* Store the retry number */
+                        char *value = tvb_get_string_enc(wmem_packet_scope(), tvb, value_offset, value_len, ENC_UTF_8 | ENC_NA);
+                        guint32 retry;
+                        gboolean retry_valid = ws_strtou32(value, NULL, &retry);
 
+
+                        sip_element_item = proto_tree_add_uint(hdr_tree, hf_header_array[hf_index],
+                            tvb, offset, next_offset - offset,
+                            retry);
+
+                        if (!retry_valid) {
+                            expert_add_info(pinfo, sip_element_item, &ei_sip_retry_after_invalid);
+                        }
+                    }
+                    break;
                     case POS_CSEQ :
                     {
                         /* Store the sequence number */
@@ -4356,6 +4502,19 @@ dissect_sip_common(tvbuff_t *tvb, int offset, int remaining_length, packet_info 
                             sip_proto_set_format_text(hdr_tree, sip_element_item, tvb, offset, linelen);
                             p_access_net_info_tree = proto_item_add_subtree(sip_element_item, ett_sip_p_access_net_info);
                             dissect_sip_p_access_network_info_header(tvb, p_access_net_info_tree, value_offset, line_end_offset);
+                        }
+                        break;
+                    case POS_P_CHARGING_VECTOR:
+                        if (hdr_tree) {
+                            proto_tree *p_charging_vector_tree;
+
+                            sip_element_item = sip_proto_tree_add_string(hdr_tree,
+                                hf_header_array[hf_index], tvb,
+                                offset, next_offset - offset,
+                                value_offset, value_len);
+                            sip_proto_set_format_text(hdr_tree, sip_element_item, tvb, offset, linelen);
+                            p_charging_vector_tree = proto_item_add_subtree(sip_element_item, ett_sip_p_charging_vector);
+                            dissect_sip_p_charging_vector_header(tvb, p_charging_vector_tree, value_offset, line_end_offset);
                         }
                         break;
                     case POS_FEATURE_CAPS:
@@ -5117,6 +5276,7 @@ guint sip_is_packet_resend(packet_info *pinfo,
             {
                 /* This frame is the original request */
                 p_val->frame_number = pinfo->num;
+                p_val->request_time = pinfo->abs_ts;
             }
             break;
         case STATUS_LINE:
@@ -5557,12 +5717,12 @@ static stat_tap_table_item sip_stat_fields[] = {
     {TABLE_ITEM_FLOAT, TAP_ALIGN_RIGHT, "Max Setup (s)", "%8.2f"},
 };
 
-static void sip_stat_init(stat_tap_table_ui* new_stat, stat_tap_gui_init_cb gui_callback, void* gui_data)
+static void sip_stat_init(stat_tap_table_ui* new_stat)
 {
     /* XXX Should we have a single request + response table instead? */
     int num_fields = sizeof(sip_stat_fields)/sizeof(stat_tap_table_item);
-    stat_tap_table *req_table = stat_tap_init_table("SIP Requests", num_fields, 0, NULL, gui_callback, gui_data);
-    stat_tap_table *resp_table = stat_tap_init_table("SIP Responses", num_fields, 0, NULL, gui_callback, gui_data);
+    stat_tap_table *req_table = stat_tap_init_table("SIP Requests", num_fields, 0, NULL);
+    stat_tap_table *resp_table = stat_tap_init_table("SIP Responses", num_fields, 0, NULL);
     stat_tap_table_item_type items[sizeof(sip_stat_fields)/sizeof(stat_tap_table_item)];
     guint i;
 
@@ -6543,7 +6703,7 @@ void proto_register_sip(void)
         },
         { &hf_header_array[POS_RETRY_AFTER],
           { "Retry-After",        "sip.Retry-After",
-            FT_STRING, BASE_NONE,NULL,0x0,
+            FT_UINT32, BASE_DEC,NULL,0x0,
             "RFC 3261: Retry-After Header", HFILL }
         },
         { &hf_header_array[POS_ROUTE],
@@ -7029,6 +7189,16 @@ void proto_register_sip(void)
           { "Service Priority",  "sip.service_priority",
             FT_STRING, BASE_NONE, NULL, 0x0,
             NULL, HFILL }
+        },
+        { &hf_sip_icid_value,
+        { "icid-value",  "sip.icid_value",
+            FT_STRING, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_sip_icid_gen_addr,
+        { "icid-gen-addr",  "sip.icid_gen_addr",
+            FT_STRING, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
         }
     };
 
@@ -7073,6 +7243,7 @@ void proto_register_sip(void)
         &ett_sip_curi,
         &ett_sip_session_id,
         &ett_sip_p_access_net_info,
+        &ett_sip_p_charging_vector,
         &ett_sip_feature_caps
     };
     static gint *ett_raw[] = {
@@ -7089,6 +7260,7 @@ void proto_register_sip(void)
         { &ei_sip_sipsec_malformed, { "sip.sec_mechanism.malformed", PI_MALFORMED, PI_WARN, "SIP Security-mechanism header malformed", EXPFILL }},
         { &ei_sip_via_sent_by_port, { "sip.Via.sent-by.port.invalid", PI_MALFORMED, PI_NOTE, "Invalid SIP Via sent-by-port", EXPFILL }},
         { &ei_sip_content_length_invalid, { "sip.content_length.invalid", PI_MALFORMED, PI_NOTE, "Invalid content_length", EXPFILL }},
+        { &ei_sip_retry_after_invalid, { "sip.retry_after.invalid", PI_MALFORMED, PI_NOTE, "Invalid retry_after value", EXPFILL }},
         { &ei_sip_Status_Code_invalid, { "sip.Status-Code.invalid", PI_MALFORMED, PI_NOTE, "Invalid Status-Code", EXPFILL }},
         { &ei_sip_authorization_invalid, { "sip.authorization.invalid", PI_PROTOCOL, PI_WARN, "Invalid authorization response for known credentials", EXPFILL }}
     };
@@ -7222,8 +7394,8 @@ void proto_register_sip(void)
         header_fields_copy_cb,
         header_fields_update_cb,
         header_fields_free_cb,
-        header_fields_initialize_cb,
-        NULL,
+        header_fields_post_update_cb,
+        header_fields_reset_cb,
         sip_custom_header_uat_fields
     );
 
@@ -7267,8 +7439,6 @@ void proto_register_sip(void)
     ext_hdr_subdissector_table = register_dissector_table("sip.hdr", "SIP Extension header", proto_sip, FT_STRING, BASE_NONE);
 
     register_stat_tap_table_ui(&sip_stat_table);
-
-    sip_custom_header_fields_hash = wmem_map_new(wmem_epan_scope(), wmem_str_hash, g_str_equal);
 
     /* compile patterns */
     ws_mempbrk_compile(&pbrk_comma_semi, ",;");

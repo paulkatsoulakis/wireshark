@@ -26,7 +26,6 @@
 #include "packet-zbee-nwk.h"
 #include "packet-zbee-aps.h"    /* for ZBEE_APS_CMD_KEY_LENGTH */
 #include "packet-zbee-security.h"
-#include <wsutil/glib-compat.h>
 
 /*************************/
 /* Function Declarations */
@@ -941,6 +940,10 @@ dissect_zbee_nwk_route_req(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     }
 
     /* Update the info column. */
+    if (route_options & ZBEE_NWK_CMD_ROUTE_OPTION_MANY_MASK) {
+        col_clear(pinfo->cinfo, COL_INFO);
+        col_append_fstr(pinfo->cinfo, COL_INFO, "Many-to-One Route Request");
+    }
     col_append_fstr(pinfo->cinfo, COL_INFO, ", Dst: 0x%04x, Src: 0x%04x", dest_addr, packet->src);
 
     /* Done */

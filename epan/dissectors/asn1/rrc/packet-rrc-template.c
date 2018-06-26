@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
- * Ref: 3GPP TS 25.331 V14.4.0 (2017-09)
+ * Ref: 3GPP TS 25.331 V15.2.0 (2018-03)
  */
 
 /**
@@ -82,14 +82,10 @@ typedef struct umts_rrc_private_data_t
 /* Helper function to get or create a struct that will be actx->private_data */
 static umts_rrc_private_data_t* umts_rrc_get_private_data(asn1_ctx_t *actx)
 {
-  if (actx->private_data != NULL) {
-    return (umts_rrc_private_data_t*)actx->private_data;
+  if (actx->private_data == NULL) {
+    actx->private_data = wmem_new0(wmem_packet_scope(), umts_rrc_private_data_t);
   }
-  else {
-    umts_rrc_private_data_t* new_struct = wmem_new0(wmem_packet_scope(), umts_rrc_private_data_t);
-    actx->private_data = new_struct;
-    return new_struct;
-  }
+  return (umts_rrc_private_data_t*)actx->private_data;
 }
 
 static guint32 private_data_get_s_rnc_id(asn1_ctx_t *actx)
@@ -266,6 +262,9 @@ static int dissect_SysInfoType22_PDU(tvbuff_t *tvb, packet_info *pinfo, proto_tr
 /* Initialize the protocol and registered fields */
 int proto_rrc = -1;
 static int hf_test;
+static int hf_urnti;
+static int hf_urnti_new;
+static int hf_urnti_current;
 #include "packet-rrc-hf.c"
 
 /* Initialize the subtree pointers */
@@ -351,11 +350,6 @@ static gint rrc_key_cmp(gconstpointer b_ptr, gconstpointer a_ptr, gpointer ignor
     return GPOINTER_TO_INT(a_ptr) < GPOINTER_TO_INT(b_ptr);
 }
 
-static void rrc_free_key(gpointer key _U_){
-            /*Keys should be de allocated elsewhere.*/
-
-}
-
 static void rrc_free_value(gpointer value ){
             g_free(value);
 }
@@ -366,16 +360,19 @@ get_or_create_cipher_info(fp_info *fpinf, rlc_info *rlcinf) {
   guint32 ueid;
   int i;
 
-  ueid = rlcinf->ueid[fpinf->cur_tb];
+  if (!fpinf || !rlcinf)
+    return NULL;
 
+  ueid = rlcinf->ueid[fpinf->cur_tb];
   cipher_info = (rrc_ciphering_info *)g_tree_lookup(rrc_ciph_info_tree, GINT_TO_POINTER((gint)ueid));
+
   if( cipher_info == NULL ){
     cipher_info = g_new0(rrc_ciphering_info,1);
 
     /*Initiate tree with START_PS values.*/
     if(!cipher_info->start_ps)
       cipher_info->start_ps = g_tree_new_full(rrc_key_cmp,
-                                        NULL,rrc_free_key,rrc_free_value);
+                                        NULL,NULL,rrc_free_value);
 
     /*Clear and initialize seq_no matrix*/
     for(i = 0; i< 31; i++){
@@ -462,7 +459,7 @@ rrc_init(void) {
     /*Initialize structure for muxed flow indication*/
     hsdsch_muxed_flows = g_tree_new_full(rrc_key_cmp,
                        NULL,      /* data pointer, optional */
-                       rrc_free_key,
+                       NULL,
                        rrc_free_value);
 
     rrc_ciph_info_tree = g_tree_new_full(rrc_key_cmp,
@@ -492,6 +489,18 @@ void proto_register_rrc(void) {
       { "RAB Test", "rrc.RAB.test",
         FT_UINT8, BASE_DEC, NULL, 0,
         "rrc.RAB_Info_r6", HFILL }},
+    { &hf_urnti,
+      { "U-RNTI", "rrc.urnti",
+        FT_UINT32, BASE_HEX, NULL, 0,
+        NULL, HFILL }},
+    { &hf_urnti_new,
+      { "New U-RNTI", "rrc.urnti_new",
+        FT_UINT32, BASE_HEX, NULL, 0,
+        NULL, HFILL }},
+    { &hf_urnti_current,
+      { "Current U-RNTI", "rrc.urnti_current",
+        FT_UINT32, BASE_HEX, NULL, 0,
+        NULL, HFILL }},
     { &hf_rrc_eutra_feat_group_ind_1,
       { "Indicator 1", "rrc.eutra_feat_group_ind_1",
         FT_BOOLEAN, BASE_NONE, TFS(&rrc_eutra_feat_group_ind_1_val), 0,

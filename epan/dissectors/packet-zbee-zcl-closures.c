@@ -56,7 +56,7 @@ void proto_register_zbee_zcl_shade_configuration(void);
 void proto_reg_handoff_zbee_zcl_shade_configuration(void);
 
 /* Command Dissector Helpers */
-static void dissect_zcl_shade_configuration_attr_data      (proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type);
+static void dissect_zcl_shade_configuration_attr_data      (proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type, gboolean client_attr);
 
 /* Private functions prototype */
 
@@ -130,9 +130,10 @@ dissect_zbee_zcl_shade_configuration(tvbuff_t *tvb _U_, packet_info *pinfo _U_, 
  *@param offset pointer to buffer offset
  *@param attr_id attribute identifier
  *@param data_type attribute data type
+ *@param client_attr ZCL client
 */
 void
-dissect_zcl_shade_configuration_attr_data(proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type)
+dissect_zcl_shade_configuration_attr_data(proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type, gboolean client_attr)
 {
     static const int * shade_config_status[] = {
         &hf_zbee_zcl_shade_configuration_status_shade_operational,
@@ -159,7 +160,7 @@ dissect_zcl_shade_configuration_attr_data(proto_tree *tree, tvbuff_t *tvb, guint
         case ZBEE_ZCL_ATTR_ID_SHADE_CONFIGURATION_MOTOR_STEP_SIZE:
         case ZBEE_ZCL_ATTR_ID_SHADE_CONFIGURATION_CLOSED_LIMIT:
         default:
-            dissect_zcl_attr_data(tvb, tree, offset, data_type);
+            dissect_zcl_attr_data(tvb, tree, offset, data_type, client_attr);
             break;
     }
 
@@ -229,15 +230,12 @@ proto_register_zbee_zcl_shade_configuration(void)
 void
 proto_reg_handoff_zbee_zcl_shade_configuration(void)
 {
-    dissector_handle_t shade_config_handle;
-
-    /* Register our dissector with the ZigBee application dissectors. */
-    shade_config_handle = find_dissector(ZBEE_PROTOABBREV_ZCL_SHADE_CONFIG);
-    dissector_add_uint("zbee.zcl.cluster", ZBEE_ZCL_CID_SHADE_CONFIG, shade_config_handle);
-
-    zbee_zcl_init_cluster(  proto_zbee_zcl_shade_configuration,
+    zbee_zcl_init_cluster(  ZBEE_PROTOABBREV_ZCL_SHADE_CONFIG,
+                            proto_zbee_zcl_shade_configuration,
                             ett_zbee_zcl_shade_configuration,
                             ZBEE_ZCL_CID_SHADE_CONFIG,
+                            ZBEE_MFG_CODE_NONE,
+                            hf_zbee_zcl_shade_configuration_attr_id,
                             hf_zbee_zcl_shade_configuration_attr_id,
                             -1, -1,
                             (zbee_zcl_fn_attr_data)dissect_zcl_shade_configuration_attr_data
@@ -283,7 +281,7 @@ void proto_reg_handoff_zbee_zcl_door_lock(void);
 /* Command Dissector Helpers */
 static void dissect_zcl_door_lock_lock_unlock_door_response        (tvbuff_t *tvb, proto_tree *tree, guint *offset);
 
-static void dissect_zcl_door_lock_attr_data                        (proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type);
+static void dissect_zcl_door_lock_attr_data                        (proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type, gboolean client_attr);
 
 /* Private functions prototype */
 
@@ -392,7 +390,7 @@ dissect_zbee_zcl_door_lock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
             zcl->tran_seqno);
 
         /* Add the command ID. */
-        proto_tree_add_item(tree, hf_zbee_zcl_door_lock_srv_rx_cmd_id, tvb, offset, 1, cmd_id);
+        proto_tree_add_item(tree, hf_zbee_zcl_door_lock_srv_rx_cmd_id, tvb, offset, 1, ENC_LITTLE_ENDIAN);
 
         /* Check if this command has a payload, then add the payload tree */
         rem_len = tvb_reported_length_remaining(tvb, ++offset);
@@ -416,7 +414,7 @@ dissect_zbee_zcl_door_lock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
             zcl->tran_seqno);
 
         /* Add the command ID. */
-        proto_tree_add_item(tree, hf_zbee_zcl_door_lock_srv_tx_cmd_id, tvb, offset, 1, cmd_id);
+        proto_tree_add_item(tree, hf_zbee_zcl_door_lock_srv_tx_cmd_id, tvb, offset, 1, ENC_LITTLE_ENDIAN);
 
         /* Check if this command has a payload, then add the payload tree */
         rem_len = tvb_reported_length_remaining(tvb, ++offset);
@@ -465,9 +463,10 @@ dissect_zcl_door_lock_lock_unlock_door_response(tvbuff_t *tvb, proto_tree *tree,
  *@param offset pointer to buffer offset
  *@param attr_id attribute identifier
  *@param data_type attribute data type
+ *@param client_attr ZCL client
 */
 void
-dissect_zcl_door_lock_attr_data(proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type)
+dissect_zcl_door_lock_attr_data(proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type, gboolean client_attr)
 {
     /* Dissect attribute data type and data */
     switch ( attr_id ) {
@@ -496,7 +495,7 @@ dissect_zcl_door_lock_attr_data(proto_tree *tree, tvbuff_t *tvb, guint *offset, 
         case ZBEE_ZCL_ATTR_ID_DOOR_LOCK_DOOR_CLOSED_EVENTS:
         case ZBEE_ZCL_ATTR_ID_DOOR_LOCK_OPEN_PERIOD:
         default:
-            dissect_zcl_attr_data(tvb, tree, offset, data_type);
+            dissect_zcl_attr_data(tvb, tree, offset, data_type, client_attr);
             break;
     }
 
@@ -569,15 +568,12 @@ proto_register_zbee_zcl_door_lock(void)
 void
 proto_reg_handoff_zbee_zcl_door_lock(void)
 {
-    dissector_handle_t door_lock_handle;
-
-    /* Register our dissector with the ZigBee application dissectors. */
-    door_lock_handle = find_dissector(ZBEE_PROTOABBREV_ZCL_DOOR_LOCK);
-    dissector_add_uint("zbee.zcl.cluster", ZBEE_ZCL_CID_DOOR_LOCK, door_lock_handle);
-
-    zbee_zcl_init_cluster(  proto_zbee_zcl_door_lock,
+    zbee_zcl_init_cluster(  ZBEE_PROTOABBREV_ZCL_DOOR_LOCK,
+                            proto_zbee_zcl_door_lock,
                             ett_zbee_zcl_door_lock,
                             ZBEE_ZCL_CID_DOOR_LOCK,
+                            ZBEE_MFG_CODE_NONE,
+                            hf_zbee_zcl_door_lock_attr_id,
                             hf_zbee_zcl_door_lock_attr_id,
                             hf_zbee_zcl_door_lock_srv_rx_cmd_id,
                             hf_zbee_zcl_door_lock_srv_tx_cmd_id,
